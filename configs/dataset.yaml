@@ -1,0 +1,64 @@
+dataset:
+  name: "squad_v2"
+  source: "huggingface"
+  version: null
+  cache_dir: "datasets/raw"
+
+task:
+  type: "extractive_question_answering"
+  context_grounded: true
+  includes_unanswerable_questions: true
+
+splits:
+  training_split: "train"
+  evaluation_source_split: "validation"
+
+  evaluation_strategy: "partition_official_validation"
+  calibration_fraction: 0.50
+  held_out_test_fraction: 0.50
+
+  split_seed: 42
+  stratify_by_answerability: true
+
+labels:
+  answerable: "ANSWERABLE"
+  unanswerable: "UNANSWERABLE"
+
+  supported: "SUPPORTED"
+  unsupported: "UNSUPPORTED"
+  uncertain: "UNCERTAIN"
+
+preprocessing:
+  preserve_original_text: true
+  normalize_whitespace: true
+  lowercase_text: false
+  remove_duplicates: true
+  remove_missing_examples: true
+
+  maximum_context_length: 384
+  maximum_question_length: 64
+  document_stride: 128
+
+sampling:
+  use_subset: false
+  maximum_train_examples: null
+  maximum_calibration_examples: null
+  maximum_test_examples: null
+
+integrity_checks:
+  check_missing_fields: true
+  check_duplicate_ids: true
+  check_split_overlap: true
+  check_class_distribution: true
+  check_answer_spans: true
+
+leakage_controls:
+  tune_on_test_set: false
+  inspect_test_errors_before_finalization: false
+  modify_prompts_using_test_results: false
+  fit_calibration_on_test_set: false
+
+outputs:
+  processed_dataset_dir: "datasets/processed/squad_v2"
+  split_manifest: "datasets/processed/squad_v2/split_manifest.json"
+  dataset_statistics: "datasets/processed/squad_v2/statistics.json"
