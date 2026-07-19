@@ -1,3 +1,7 @@
+"""
+Bu dosyanın amacı, birden fazla YAML yapılandırma dosyasını okuyup tek bir config sözlüğünde birleştirmektir.
+"""
+
 from pathlib import Path 
 from typing import Any
 
