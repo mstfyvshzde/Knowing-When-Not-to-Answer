@@ -1,0 +1,111 @@
+project:
+  name: "Knowing-When-Not-to-Answer"
+  # Projenin adı.
+
+  task: "selective_question_answering"
+  # Modelin her soruya cevap vermek yerine,
+  # cevaplama, doğrulama veya çekimser kalma kararı verdiği görev.
+
+  experiment_name: "default_experiment"
+  # Çalıştırılan deneyin adı.
+
+
+reproducibility:
+  seed: 17
+  # Rastgele işlemlerin aynı sonuçları üretmesi için kullanılan sabit sayı.
+
+  deterministic: true
+  # Deney tekrar çalıştırıldığında mümkün olduğunca aynı sonuçları üretir.
+
+
+paths:
+  raw_data_dir: "data/raw"
+  # Ham veri dosyalarının bulunduğu klasör.
+
+  processed_data_dir: "data/processed"
+  # İşlenmiş ve modele hazır verilerin bulunduğu klasör.
+
+  output_dir: "outputs"
+  # Genel çıktıların kaydedileceği ana klasör.
+
+  predictions_dir: "outputs/predictions"
+  # Model tahminlerinin kaydedileceği klasör.
+
+  figures_dir: "outputs/figures"
+  # Grafik ve görsellerin kaydedileceği klasör.
+
+  tables_dir: "outputs/tables"
+  # Sonuç tablolarının kaydedileceği klasör.
+
+  logs_dir: "outputs/logs"
+  # Program çalışma kayıtlarının kaydedileceği klasör.
+
+
+runtime:
+  device: "auto"
+  # CPU veya GPU seçimini otomatik yapar.
+
+  batch_size: 16
+  # Modelin aynı anda işleyeceği örnek sayısı.
+
+  num_workers: 0
+  # Veri yükleme sırasında kullanılacak ek işlem sayısı.
+  # 0 olması işlemin ana program üzerinden yapılacağı anlamına gelir.
+
+
+decision_space:
+  answer_label: "ANSWER"
+  # Model soruyu güvenle cevaplayabiliyorsa verilen karar.
+
+  verify_label: "VERIFY"
+  # Cevap vermeden önce bilginin doğrulanması gerekiyorsa verilen karar.
+
+  abstain_label: "ABSTAIN"
+  # Model yeterince emin değilse cevap vermemeyi seçer.
+
+
+logging:
+  level: "INFO"
+  # Normal çalışma bilgileri ve önemli mesajlar kaydedilir.
+
+  save_predictions: true
+  # Modelin verdiği tahminleri dosyaya kaydeder.
+
+  save_metrics: true
+  # Başarı ölçümlerini kaydeder.
+
+  save_config: true
+  # Kullanılan bu yapılandırma dosyasını sonuçlarla birlikte kaydeder.
+
+
+evaluation:
+  primary_metric: "selective_risk"
+  # Ana değerlendirme ölçütüdür.
+  # Modelin cevap vermeyi seçtiği sorulardaki hata oranını ölçer.
+
+  report_accuracy: true
+  # Doğru cevap oranını raporlar.
+
+  report_coverage: true
+  # Modelin soruların ne kadarına cevap verdiğini raporlar.
+
+  report_abstention_rate: true
+  # Modelin cevap vermekten kaçındığı soru oranını raporlar.
+
+  report_false_confidence_rate: true
+  # Modelin yanlış olduğu hâlde kendinden emin cevap verme oranını ölçer.
+
+  report_unsupported_answer_rate: true
+  # Yeterli kanıt veya dayanak olmadan verilen cevapların oranını ölçer.
+
+  report_calibration: true
+  # Modelin güven puanlarının gerçek doğruluk oranlarıyla uyumunu ölçer.
+
+
+experiment:
+  use_test_set_for_tuning: false
+  # Test verisi model ayarlamak için kullanılmaz.
+  # Test seti yalnızca son değerlendirme için korunur.
+
+  overwrite_outputs: false
+  # Önceden oluşturulmuş sonuç dosyalarının üzerine yazılmaz.

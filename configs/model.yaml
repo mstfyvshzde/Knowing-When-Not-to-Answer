@@ -1,0 +1,104 @@
+verification:
+  enabled: true                         # Genel doğrulama sistemini aktif eder
+
+  strategy: "combined"                  # Güven skoru ve kanıt doğrulamasını birlikte kullanır
+  available_strategies:
+    - "confidence_only"                 # Sadece güven skoruna göre karar verir
+    - "evidence_only"                   # Sadece kanıt desteğine göre karar verir
+    - "combined"                        # Güven ve kanıt sonuçlarını birlikte değerlendirir
+
+confidence_verification:
+  enabled: true                         # Güven skoru tabanlı doğrulamayı aktif eder
+  use_calibrated_confidence: true       # Ham skor yerine kalibre edilmiş güven skorunu kullanır
+
+  thresholds:
+    high_confidence: 0.80               # Bu değerin üzeri yüksek güven kabul edilir
+    low_confidence: 0.40                # Bu değerin altı düşük güven kabul edilir
+
+  high_confidence_threshold_is_provisional: true # Yüksek güven eşiğinin geçici olduğunu belirtir
+  low_confidence_threshold_is_provisional: true  # Düşük güven eşiğinin geçici olduğunu belirtir
+
+evidence_verification:
+  enabled: true                         # Cevabın kanıt tarafından desteklenmesini kontrol eder
+  method: "natural_language_inference"  # Cevap ve bağlam ilişkisini NLI ile değerlendirir
+
+  labels:
+    supported: "SUPPORTED"              # Kanıt cevabı destekliyorsa kullanılacak etiket
+    unsupported: "UNSUPPORTED"          # Kanıt cevapla çelişiyorsa kullanılacak etiket
+    uncertain: "UNCERTAIN"              # Destek durumu net değilse kullanılacak etiket
+
+  thresholds:
+    supported_probability: 0.75         # Destek olasılığı bu değeri geçerse desteklenmiş sayılır
+    unsupported_probability: 0.65       # Çelişme olasılığı bu değeri geçerse desteklenmiyor sayılır
+
+  verifier_model:
+    name: null                          # Kullanılacak doğrulama modelinin adı
+    revision: null                      # Doğrulama modelinin belirli sürümü
+    trust_remote_code: false            # Model deposundaki özel kodların çalışmasını engeller
+
+answerability_verification:
+  enabled: true                         # Sorunun bağlamdan cevaplanabilirliğini kontrol eder
+
+  thresholds:
+    answerable_probability: 0.70        # Bu değerin üzeri cevaplanabilir kabul edilir
+    unanswerable_probability: 0.70      # Bu değerin üzeri cevaplanamaz kabul edilir
+
+consistency_verification:
+  enabled: false                        # Çoklu çalıştırma ile tutarlılık kontrolünü kapatır
+
+  number_of_runs: 5                     # Tutarlılık için yapılacak tekrar sayısı
+  agreement_threshold: 0.80             # Sonuçların tutarlı sayılması için gereken uyum oranı
+  sampling_temperature: 0.0             # Rastgelelik seviyesi; 0 deterministik sonuç üretir
+
+decision_policy:
+  actions:
+    - "ANSWER"                          # Cevabı doğrudan kullanıcıya sun
+    - "VERIFY"                          # Cevabı ek doğrulamaya gönder
+    - "ABSTAIN"                         # Güvenli cevap verilemediğinde cevaplamaktan kaçın
+
+  rules:
+    answer:
+      require_supported_evidence: true  # Cevap vermek için kanıt desteği zorunludur
+      minimum_confidence: 0.80          # Cevap için gereken minimum güven skoru
+      require_answerable_prediction: true # Sorunun cevaplanabilir tahmin edilmesi gerekir
+
+    verify:
+      allow_uncertain_evidence: true    # Kanıt belirsizse doğrulama aşamasına izin verir
+      minimum_confidence: 0.40          # Doğrulamaya gönderilecek minimum güven skoru
+      maximum_confidence: 0.80          # Doğrulama aralığındaki maksimum güven skoru
+
+    abstain:
+      on_unsupported_evidence: true     # Kanıt desteklemiyorsa cevap vermekten kaçınır
+      on_unanswerable_prediction: true  # Soru cevaplanamazsa cevap vermekten kaçınır
+      below_confidence: 0.40            # Güven bu değerin altındaysa cevap üretmez
+
+  conflict_resolution:
+    priority:
+      - "UNSUPPORTED_EVIDENCE"          # En yüksek öncelik: kanıt cevabı desteklemiyor
+      - "UNANSWERABLE"                  # İkinci öncelik: soru cevaplanamaz
+      - "LOW_CONFIDENCE"                # Üçüncü öncelik: güven skoru düşük
+      - "UNCERTAIN_EVIDENCE"            # Dördüncü öncelik: kanıt belirsiz
+      - "SUPPORTED_EVIDENCE"            # Son öncelik: kanıt cevabı destekliyor
+
+threshold_selection:
+  dataset_split: "calibration"          # Eşiklerin calibration veri bölümünde seçileceğini belirtir
+  objective: "minimize_selective_risk_at_target_coverage"
+                                        # Belirli kapsama oranında hata riskini azaltmayı amaçlar
+
+  target_coverage:
+    - 0.50                              # Soruların %50'sine cevap verme hedefi
+    - 0.70                              # Soruların %70'ine cevap verme hedefi
+    - 0.90                              # Soruların %90'ına cevap verme hedefi
+
+  tune_on_test_set: false               # Eşiklerin test verisi üzerinde ayarlanmasını engeller
+
+outputs:
+  save_component_scores: true           # Her doğrulama bileşeninin skorunu kaydeder
+  save_verification_labels: true        # SUPPORTED gibi doğrulama etiketlerini kaydeder
+  save_final_decisions: true            # ANSWER, VERIFY veya ABSTAIN kararını kaydeder
+  save_decision_reasons: true           # Kararın hangi sebeple verildiğini kaydeder
+
+audit:
+  record_rule_triggered: true            # Hangi karar kuralının çalıştığını kaydeder
+  record_thresholds: true                # Kullanılan eşik değerlerini kaydeder
+  record_verifier_version: true          # Doğrulayıcı modelin sürümünü kaydeder

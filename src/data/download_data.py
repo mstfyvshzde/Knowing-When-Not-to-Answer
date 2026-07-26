@@ -15,17 +15,15 @@ from pathlib import Path
 
 # DatasetDict:
 # train ve validation gibi birden fazla split içeren veri yapısıdır.
-#
 # load_dataset:
 # Hugging Face Hub'dan dataset indirmek için kullanılır.
 from datasets import DatasetDict, load_dataset
-
 
 # Hugging Face üzerindeki dataset kimliği.
 DATASET_NAME = "rajpurkar/squad_v2"
 
 # Dataset'in bilgisayarda kaydedileceği klasör.
-#
+
 # Daha önce klasörümüzün adı "datasets" idi.
 # Python package ile çakışmaması için "data" yaptık.
 OUTPUT_DIR = Path("data/raw/squad_v2")
@@ -50,7 +48,6 @@ def download_dataset(
 
     # Dataset klasörü zaten varsa ne yapacağımıza karar veriyoruz.
     if OUTPUT_DIR.exists():
-
         # overwrite=False ise yanlışlıkla tekrar indirmeyi engelliyoruz.
         if not overwrite:
             raise FileExistsError(
@@ -81,9 +78,7 @@ def download_dataset(
     # Yanlış veya beklenmeyen bir veri yapısı gelirse
     # programı anlaşılır bir hatayla durduruyoruz.
     if not isinstance(dataset, DatasetDict):
-        raise TypeError(
-            "Expected load_dataset() to return a DatasetDict."
-        )
+        raise TypeError("Expected load_dataset() to return a DatasetDict.")
 
     # İndirilen dataset'i diske kaydediyoruz.
     #
@@ -95,10 +90,7 @@ def download_dataset(
 
     # Her split'in örnek sayısını gösteriyoruz.
     for split_name, split_data in dataset.items():
-        print(
-            f"{split_name}: "
-            f"{len(split_data):,} examples"
-        )
+        print(f"{split_name}: {len(split_data):,} examples")
 
     return dataset
 

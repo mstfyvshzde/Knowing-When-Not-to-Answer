@@ -1,0 +1,60 @@
+{
+  "total_predictions": 200,
+  "baseline_full_coverage_accuracy": 0.445,
+  "final_policy": {
+    "answer": {
+      "count": 77,
+      "rate": 0.385,
+      "correct_count": 69,
+      "incorrect_count": 8,
+      "accuracy": 0.8961038961038961,
+      "risk": 0.10389610389610393
+    },
+    "verify": {
+      "count": 1,
+      "rate": 0.005,
+      "correct_count": 0,
+      "incorrect_count": 1,
+      "accuracy": 0.0,
+      "risk": 1.0
+    },
+    "abstain": {
+      "count": 122,
+      "rate": 0.61,
+      "correct_count": 20,
+      "incorrect_count": 102,
+      "accuracy": 0.16393442622950818,
+      "risk": 0.8360655737704918
+    },
+    "answer_coverage": 0.385,
+    "selective_risk": 0.10389610389610393,
+    "verify_rate": 0.005,
+    "abstain_rate": 0.61
+  },
+  "threshold_only_policy": {
+    "total": 200,
+    "answer_count": 76,
+    "verify_count": 2,
+    "abstain_count": 122,
+    "answer_coverage": 0.38,
+    "verify_rate": 0.01,
+    "abstain_rate": 0.61,
+    "answer_accuracy": 0.9078947368421053,
+    "selective_risk": 0.09210526315789469
+  },
+  "evidence_distribution": {
+    "WEAK": 79,
+    "SUPPORTED": 120,
+    "UNSUPPORTED": 1
+  },
+  "decision_reason_distribution": {
+    "high_confidence_answer_preserved": 76,
+    "confidence_below_abstain_threshold": 122,
+    "medium_confidence_with_supported_evidence": 1,
+    "medium_confidence_and_weak_evidence": 1
+  },
+  "policy_comparison": {
+    "risk_change": 0.01179084073820924,
+    "coverage_change": 0.0050000000000000044
+  }
+}

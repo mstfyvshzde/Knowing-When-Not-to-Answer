@@ -9,7 +9,7 @@ Large dataset files should not be committed directly unless their license explic
 ## Directory Structure
 
 ```text
-datasets/
+data/
 ├── raw/          Original downloaded data
 ├── processed/    Cleaned and transformed data
 ├── external/     Additional benchmark resources
