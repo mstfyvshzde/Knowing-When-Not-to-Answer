@@ -71,13 +71,11 @@ def save_json(
         "w",
         encoding="utf-8",
     ) as file:
-
         # Python nesnesini JSON formatına çevirip kaydediyoruz.
         json.dump(
             data,
             file,
             indent=indent,
-
             # Türkçe veya başka Unicode karakterlerin
             # bozulmadan kaydedilmesini sağlar.
             ensure_ascii=False,
@@ -98,16 +96,13 @@ def load_json(path: str | Path) -> Any:
 
     # Dosya yoksa anlaşılır hata mesajı veriyoruz.
     if not file_path.exists():
-        raise FileNotFoundError(
-            f"JSON file not found: {file_path}"
-        )
+        raise FileNotFoundError(f"JSON file not found: {file_path}")
 
     # Dosyayı okuma modunda açıyoruz.
     with file_path.open(
         "r",
         encoding="utf-8",
     ) as file:
-
         # JSON içeriğini Python dictionary veya list'e çevirir.
         return json.load(file)
 
@@ -135,10 +130,8 @@ def save_jsonl(
         "w",
         encoding="utf-8",
     ) as file:
-
         # Her prediction kaydını tek tek işliyoruz.
         for record in records:
-
             # Dictionary'yi JSON metnine çeviriyoruz.
             json_line = json.dumps(
                 record,
@@ -162,9 +155,7 @@ def load_jsonl(
     file_path = Path(path)
 
     if not file_path.exists():
-        raise FileNotFoundError(
-            f"JSONL file not found: {file_path}"
-        )
+        raise FileNotFoundError(f"JSONL file not found: {file_path}")
 
     # Okunan bütün prediction'lar burada tutulacak.
     records: list[dict[str, Any]] = []
@@ -173,14 +164,12 @@ def load_jsonl(
         "r",
         encoding="utf-8",
     ) as file:
-
         # Satır numarasını da takip ediyoruz.
         # Hatalı JSON varsa hangi satırda olduğunu söyleyebiliriz.
         for line_number, line in enumerate(
             file,
             start=1,
         ):
-
             # Satır başı ve sonundaki boşlukları temizliyoruz.
             stripped_line = line.strip()
 
@@ -196,8 +185,7 @@ def load_jsonl(
             except json.JSONDecodeError as error:
                 # JSON bozuksa hangi satırda hata olduğunu gösteriyoruz.
                 raise ValueError(
-                    f"Invalid JSON on line "
-                    f"{line_number}: {file_path}"
+                    f"Invalid JSON on line {line_number}: {file_path}"
                 ) from error
 
     return records
@@ -226,9 +214,7 @@ def save_csv(
 
     # Boş listeyle CSV kolonlarını belirleyemeyiz.
     if not rows:
-        raise ValueError(
-            "Cannot save an empty list to CSV."
-        )
+        raise ValueError("Cannot save an empty list to CSV.")
 
     file_path = ensure_parent_directory(path)
 
@@ -238,11 +224,9 @@ def save_csv(
     with file_path.open(
         "w",
         encoding="utf-8",
-
         # CSV dosyasında gereksiz boş satır oluşmasını önler.
         newline="",
     ) as file:
-
         writer = csv.DictWriter(
             file,
             fieldnames=fieldnames,
@@ -297,9 +281,7 @@ if __name__ == "__main__":
     )
 
     # Kaydedilen JSON dosyasını yeniden oku.
-    loaded_predictions = load_json(
-        "outputs/predictions/example.json"
-    )
+    loaded_predictions = load_json("outputs/predictions/example.json")
 
     print("Loaded predictions:")
     print(loaded_predictions)

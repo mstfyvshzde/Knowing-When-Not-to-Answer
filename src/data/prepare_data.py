@@ -22,7 +22,6 @@ from datasets import Dataset, DatasetDict, load_from_disk
 
 from src.utils.io import save_json
 
-
 # İndirdiğimiz orijinal dataset'in konumu.
 RAW_DATA_DIR = Path("data/raw/squad_v2")
 
@@ -78,11 +77,7 @@ def add_answerability_column(
 
     # map(), dataset içindeki her örneğe aynı fonksiyonu uygular.
     return dataset.map(
-        lambda example: {
-            "is_answerable": int(
-                is_answerable(example)
-            )
-        },
+        lambda example: {"is_answerable": int(is_answerable(example))},
         desc="Adding answerability labels",
     )
 
@@ -106,9 +101,7 @@ def stratified_split_indices(
 
     # Geçersiz oranları engelliyoruz.
     if not 0.0 < calibration_fraction < 1.0:
-        raise ValueError(
-            "calibration_fraction must be between 0 and 1."
-        )
+        raise ValueError("calibration_fraction must be between 0 and 1.")
 
     # Modern NumPy random generator oluşturuyoruz.
     # Aynı seed kullanıldığı için split tekrar üretilebilir.
@@ -122,29 +115,20 @@ def stratified_split_indices(
 
     # Unique labels burada 0 ve 1 olacaktır.
     for label in np.unique(labels_array):
-
         # Bu label'a ait örneklerin indexlerini buluyoruz.
-        class_indices = np.where(
-            labels_array == label
-        )[0]
+        class_indices = np.where(labels_array == label)[0]
 
         # Index sırasını rastgele karıştırıyoruz.
         rng.shuffle(class_indices)
 
         # Bu sınıftaki örneklerin kaç tanesi calibration'a gidecek?
-        split_point = int(
-            len(class_indices) * calibration_fraction
-        )
+        split_point = int(len(class_indices) * calibration_fraction)
 
         # İlk bölüm calibration setine gider.
-        calibration_indices.extend(
-            class_indices[:split_point].tolist()
-        )
+        calibration_indices.extend(class_indices[:split_point].tolist())
 
         # Kalan bölüm test setine gider.
-        test_indices.extend(
-            class_indices[split_point:].tolist()
-        )
+        test_indices.extend(class_indices[split_point:].tolist())
 
     # Calibration ve test içindeki örnek sırasını da karıştırıyoruz.
     rng.shuffle(calibration_indices)
@@ -174,7 +158,6 @@ def build_statistics(
 
     # Train, calibration ve test splitlerini tek tek inceliyoruz.
     for split_name, split_data in dataset.items():
-
         # 1 ve 0 değerlerinden oluşan answerability kolonu.
         labels = split_data["is_answerable"]
 
@@ -184,18 +167,14 @@ def build_statistics(
         total_count = len(split_data)
 
         # Kalan sorular unanswerable'dır.
-        unanswerable_count = (
-            total_count - answerable_count
-        )
+        unanswerable_count = total_count - answerable_count
 
         statistics[split_name] = {
             "total_examples": total_count,
             "answerable_examples": answerable_count,
             "unanswerable_examples": unanswerable_count,
             "answerable_fraction": (
-                answerable_count / total_count
-                if total_count > 0
-                else 0.0
+                answerable_count / total_count if total_count > 0 else 0.0
             ),
         }
 
@@ -223,12 +202,8 @@ def prepare_dataset(
 
     # Hazırlanmış dataset zaten varsa yanlışlıkla silmeyelim.
     if OUTPUT_DIR.exists():
-
         if not overwrite:
-            raise FileExistsError(
-                f"Processed dataset already exists at: "
-                f"{OUTPUT_DIR}"
-            )
+            raise FileExistsError(f"Processed dataset already exists at: {OUTPUT_DIR}")
 
         # overwrite=True verilirse eski processed veri silinir.
         shutil.rmtree(OUTPUT_DIR)
@@ -236,54 +211,36 @@ def prepare_dataset(
     print(f"Loading raw dataset from: {RAW_DATA_DIR}")
 
     # save_to_disk() ile kaydedilen dataset'i tekrar açıyoruz.
-    raw_dataset = load_from_disk(
-        str(RAW_DATA_DIR)
-    )
+    raw_dataset = load_from_disk(str(RAW_DATA_DIR))
 
     if not isinstance(raw_dataset, DatasetDict):
-        raise TypeError(
-            "Expected the raw dataset to be a DatasetDict."
-        )
+        raise TypeError("Expected the raw dataset to be a DatasetDict.")
 
     # Gerekli splitlerin mevcut olduğunu kontrol ediyoruz.
     required_splits = {"train", "validation"}
 
-    missing_splits = required_splits.difference(
-        raw_dataset.keys()
-    )
+    missing_splits = required_splits.difference(raw_dataset.keys())
 
     if missing_splits:
-        raise ValueError(
-            f"Missing dataset splits: {missing_splits}"
-        )
+        raise ValueError(f"Missing dataset splits: {missing_splits}")
 
     # Train verisine answerability kolonu ekle.
-    train_dataset = add_answerability_column(
-        raw_dataset["train"]
-    )
+    train_dataset = add_answerability_column(raw_dataset["train"])
 
     # Validation verisine answerability kolonu ekle.
-    validation_dataset = add_answerability_column(
-        raw_dataset["validation"]
-    )
+    validation_dataset = add_answerability_column(raw_dataset["validation"])
 
     # Validation setini calibration ve test olarak böl.
-    calibration_indices, test_indices = (
-        stratified_split_indices(
-            labels=validation_dataset["is_answerable"],
-            calibration_fraction=CALIBRATION_FRACTION,
-            seed=SEED,
-        )
+    calibration_indices, test_indices = stratified_split_indices(
+        labels=validation_dataset["is_answerable"],
+        calibration_fraction=CALIBRATION_FRACTION,
+        seed=SEED,
     )
 
     # select(), verilen indexlerdeki örnekleri seçer.
-    calibration_dataset = validation_dataset.select(
-        calibration_indices
-    )
+    calibration_dataset = validation_dataset.select(calibration_indices)
 
-    test_dataset = validation_dataset.select(
-        test_indices
-    )
+    test_dataset = validation_dataset.select(test_indices)
 
     # Yeni dataset yapısını oluşturuyoruz.
     prepared_dataset = DatasetDict(
@@ -301,14 +258,10 @@ def prepare_dataset(
     )
 
     # Hazırlanmış dataset'i diske kaydediyoruz.
-    prepared_dataset.save_to_disk(
-        str(OUTPUT_DIR)
-    )
+    prepared_dataset.save_to_disk(str(OUTPUT_DIR))
 
     # Split istatistiklerini hesaplıyoruz.
-    statistics = build_statistics(
-        prepared_dataset
-    )
+    statistics = build_statistics(prepared_dataset)
 
     # İstatistikleri JSON olarak kaydediyoruz.
     save_json(
@@ -324,16 +277,13 @@ def prepare_dataset(
             "calibration_fraction": CALIBRATION_FRACTION,
             "splits": {
                 split_name: len(split_data)
-                for split_name, split_data
-                in prepared_dataset.items()
+                for split_name, split_data in prepared_dataset.items()
             },
         },
         OUTPUT_DIR / "split_manifest.json",
     )
 
-    print(
-        f"\nPrepared dataset saved to: {OUTPUT_DIR}"
-    )
+    print(f"\nPrepared dataset saved to: {OUTPUT_DIR}")
 
     # Sonuçları Terminal'de gösteriyoruz.
     for split_name, split_stats in statistics.items():

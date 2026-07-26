@@ -1,0 +1,124 @@
+evaluation:
+  dataset_split: "test"                  # Değerlendirmenin test veri kümesi üzerinde yapılacağını belirtir
+  save_individual_predictions: true      # Her örnek için model tahminlerini ayrı ayrı kaydeder
+  save_summary_metrics: true             # Genel performans metriklerinin özetini kaydeder
+
+systems:
+  - "raw_baseline"                       # Doğrulama veya güven filtresi olmayan temel sistem
+  - "confidence_baseline"                # Yalnızca güven skoruna dayalı sistem
+  - "evidence_verifier"                  # Kanıt doğrulayıcı kullanan sistem
+  - "combined_framework"                 # Güven ve kanıt doğrulamasını birlikte kullanan sistem
+
+correctness:
+  metric: "exact_match_and_f1"           # Doğruluğu Exact Match ve token F1 ile ölçer
+  report_exact_match: true               # Cevabın referans cevapla tamamen eşleşme oranını raporlar
+  report_token_f1: true                  # Tahmin ve gerçek cevap arasındaki token benzerliğini raporlar
+
+selective_prediction:
+  report_coverage: true                  # Sistemin cevap verdiği örneklerin oranını raporlar
+  report_abstention_rate: true           # Sistemin cevap vermekten kaçındığı örneklerin oranını raporlar
+  report_selective_risk: true            # Cevap verilen örneklerdeki hata oranını raporlar
+
+  coverage_levels:
+    - 0.30                               # Veri kümesinin %30'una cevap verildiğindeki performans
+    - 0.50                               # Veri kümesinin %50'sine cevap verildiğindeki performans
+    - 0.70                               # Veri kümesinin %70'ine cevap verildiğindeki performans
+    - 0.80                               # Veri kümesinin %80'ine cevap verildiğindeki performans
+    - 0.90                               # Veri kümesinin %90'ına cevap verildiğindeki performans
+    - 1.00                               # Tüm sorulara cevap verildiğindeki performans
+
+  compare_at_equal_coverage: true        # Sistemleri aynı cevaplama oranında karşılaştırır
+
+reliability:
+  report_unsupported_answer_rate: true   # Kanıt tarafından desteklenmeyen cevapların oranını raporlar
+  report_false_confidence_rate: true     # Yanlış olmasına rağmen yüksek güvenli cevapların oranını raporlar
+  report_unnecessary_abstention_rate: true # Doğru cevap verebilecekken kaçınılan örneklerin oranını raporlar
+
+  high_confidence_threshold: 0.80        # Bu değerin üzerindeki skorları yüksek güven kabul eder
+  high_confidence_threshold_is_provisional: true
+                                        # Yüksek güven eşiğinin geçici ve ayarlanabilir olduğunu belirtir
+
+calibration:
+  enabled: true                          # Güven skorlarının doğrulukla uyumunu değerlendirmeyi açar
+
+  metrics:
+    - "expected_calibration_error"       # Ortalama güven-doğruluk farkını ölçer
+    - "maximum_calibration_error"        # Binler arasındaki en büyük güven-doğruluk farkını ölçer
+    - "brier_score"                      # Olasılık tahminlerinin karesel hatasını ölçer
+    - "negative_log_likelihood"          # Doğru sonuçlara atanan olasılıkların log kaybını ölçer
+
+  number_of_bins: 15                     # Kalibrasyon hesaplamasında kullanılacak aralık sayısı
+  binning_strategy: "equal_width"        # 0–1 güven aralığını eşit genişlikte bölümlere ayırır
+
+classification:
+  unreliable_answer_is_positive_class: true
+                                        # Güvenilmez cevabı sınıflandırmada pozitif sınıf kabul eder
+
+  metrics:
+    - "precision"                        # Güvenilmez denilen cevapların ne kadarının gerçekten güvenilmez olduğunu ölçer
+    - "recall"                           # Gerçek güvenilmez cevapların ne kadarının tespit edildiğini ölçer
+    - "f1"                               # Precision ve recall değerlerinin harmonik ortalamasıdır
+    - "accuracy"                         # Toplam doğru sınıflandırma oranını ölçer
+    - "confusion_matrix"                 # Doğru ve yanlış sınıflandırma sayılarını tablo halinde gösterir
+    - "roc_auc"                          # Farklı eşiklerde sınıflandırma ayırma başarısını ölçer
+    - "pr_auc"                           # Precision-recall eğrisi altındaki alanı ölçer
+
+risk_coverage:
+  enabled: true                          # Risk-kapsama analizini aktif eder
+  number_of_thresholds: 100              # Eğriyi oluşturmak için kullanılacak güven eşiği sayısı
+  calculate_area_under_curve: true       # Risk-kapsama eğrisinin altındaki alanı hesaplar
+  save_curve_data: true                  # Eğriyi oluşturan sayısal verileri kaydeder
+  save_figure: true                      # Risk-kapsama grafiğini dosya olarak kaydeder
+
+statistical_analysis:
+  enabled: true                          # İstatistiksel analizleri aktif eder
+  confidence_level: 0.95                 # %95 güven aralığı kullanılacağını belirtir
+  bootstrap_iterations: 1000             # Bootstrap örnekleme işleminin tekrar sayısı
+  bootstrap_seed: 42                     # Bootstrap sonuçlarının tekrar üretilebilir olmasını sağlar
+
+  paired_comparisons: true               # Sistemleri aynı örnekler üzerinde eşleştirilmiş şekilde karşılaştırır
+  multiple_comparison_correction: false  # Çoklu karşılaştırmalarda hata düzeltmesi uygulamaz
+
+subgroup_analysis:
+  enabled: true                          # Alt grup bazlı performans analizini aktif eder
+
+  groups:
+    - "answerable"                       # Cevaplanabilir sorular için ayrı analiz yapar
+    - "unanswerable"                     # Cevaplanamaz sorular için ayrı analiz yapar
+
+  report_sample_sizes: true              # Her alt gruptaki örnek sayısını raporlar
+  report_group_metrics: true             # Her alt grup için performans metriklerini raporlar
+
+error_analysis:
+  enabled: true                          # Hata türlerine göre ayrıntılı analiz yapar
+
+  categories:
+    - "high_confidence_incorrect"        # Yüksek güvenli fakat yanlış cevaplar
+    - "unsupported_answer"               # Kanıt tarafından desteklenmeyen cevaplar
+    - "unnecessary_abstention"           # Cevap verilebilecekken sistemin kaçınması
+    - "missed_unanswerable_question"     # Cevaplanamaz sorunun cevaplanabilir sanılması
+    - "incorrect_evidence_decision"      # Kanıt doğrulayıcının yanlış karar vermesi
+    - "calibration_failure"              # Güven skorunun gerçek doğrulukla uyumsuz olması
+
+reporting:
+  decimal_places: 4                      # Sayısal sonuçları virgülden sonra dört basamakla gösterir
+  include_sample_size: true              # Raporlara örnek sayısını ekler
+  include_confidence_intervals: true     # Raporlara güven aralıklarını ekler
+  include_thresholds: true               # Kullanılan eşik değerlerini rapora ekler
+  include_model_version: true            # Kullanılan model sürümünü rapora ekler
+  include_dataset_version: true          # Kullanılan veri kümesi sürümünü rapora ekler
+  include_config_path: true              # Kullanılan yapılandırma dosyasının yolunu rapora ekler
+
+outputs:
+  metrics_file: "outputs/tables/evaluation_metrics.json"
+                                        # Genel değerlendirme metriklerinin kaydedileceği JSON dosyası
+  comparison_table: "outputs/tables/system_comparison.csv"
+                                        # Sistem karşılaştırma tablosunun kaydedileceği CSV dosyası
+  risk_coverage_data: "outputs/tables/risk_coverage.csv"
+                                        # Risk-kapsama eğrisi verilerinin kaydedileceği CSV dosyası
+  risk_coverage_figure: "outputs/figures/risk_coverage_curve.png"
+                                        # Risk-kapsama grafiğinin kaydedileceği görsel dosyası
+  calibration_figure: "outputs/figures/calibration_curve.png"
+                                        # Kalibrasyon eğrisinin kaydedileceği görsel dosyası
+  confusion_matrix_figure: "outputs/figures/confusion_matrix.png"
+                                        # Karmaşıklık matrisinin kaydedileceği görsel dosyası

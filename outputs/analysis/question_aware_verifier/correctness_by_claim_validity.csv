@@ -1,0 +1,3 @@
+claim_validity,count,correct,incorrect,accuracy,error_rate,share_of_all_records
+VALID,172,78,94,0.45348837209302323,0.5465116279069767,0.86
+INVALID,28,11,17,0.39285714285714285,0.6071428571428571,0.14

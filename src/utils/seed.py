@@ -38,9 +38,7 @@ def set_seed(
 
     # Negatif seed kullanmayı engelliyoruz.
     if seed < 0:
-        raise ValueError(
-            "Seed must be a non-negative integer."
-        )
+        raise ValueError("Seed must be a non-negative integer.")
 
     # Python hash işlemlerinin daha tutarlı olması için (Hash işlemleri, bir veriyi sabit uzunlukta bir değere dönüştürür.)
     # environment variable ayarlıyoruz.

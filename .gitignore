@@ -1,0 +1,99 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ============================================================
+# Virtual environments
+# ============================================================
+.venv/
+venv/
+env/
+ENV/
+
+# ============================================================
+# Environment variables and secrets
+# ============================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets.*
+credentials.*
+
+# ============================================================
+# Operating systems and editors
+# ============================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================================
+# Jupyter
+# ============================================================
+.ipynb_checkpoints/
+
+# ============================================================
+# Build and package artefacts
+# ============================================================
+build/
+dist/
+*.egg-info/
+
+# ============================================================
+# Research datasets
+# Keep only directory placeholders and documentation.
+# ============================================================
+data/raw/*
+data/processed/*
+data/external/*
+
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+!data/README.md
+
+# Legacy dataset directory
+datasets/raw/*
+datasets/processed/*
+datasets/external/*
+
+# ============================================================
+# Generated predictions and logs
+# These are reproducible and may be large.
+# ============================================================
+outputs/predictions/*
+!outputs/predictions/.gitkeep
+
+outputs/logs/*
+!outputs/logs/.gitkeep
+
+# ============================================================
+# Temporary files
+# ============================================================
+*.tmp
+*.temp
+*.bak
+
+# Large intermediate analysis records
+outputs/analysis/**/*.jsonl
+outputs/analysis/**/annotation_template.csv
+
+# Placeholder/example artefacts
+outputs/tables/example.csv
+outputs/predictions/example.json
+outputs/predictions/example.jsonl

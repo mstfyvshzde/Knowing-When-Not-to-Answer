@@ -55,9 +55,7 @@ def setup_logger(
 
     # Geçersiz bir logging seviyesi verilmişse hata veriyoruz.
     if not isinstance(numeric_level, int):
-        raise ValueError(
-            f"Invalid logging level: {level}"
-        )
+        raise TypeError(f"Invalid logging level: {level}")
 
     # Logger'ın minimum mesaj seviyesini belirliyoruz.
     logger.setLevel(numeric_level)
@@ -89,7 +87,6 @@ def setup_logger(
     # Kullanıcı bir log dosyası verdiyse
     # mesajları dosyaya da kaydediyoruz.
     if log_file is not None:
-
         # String yolu Path nesnesine çeviriyoruz.
         log_path = Path(log_file)
 
@@ -129,16 +126,10 @@ if __name__ == "__main__":
     )
 
     # Normal bilgi mesajı.
-    logger.info(
-        "Logger initialized successfully."
-    )
+    logger.info("Logger initialized successfully.")
 
     # Bir uyarı mesajı.
-    logger.warning(
-        "This is a test warning."
-    )
+    logger.warning("This is a test warning.")
 
     # Örnek hata mesajı.
-    logger.error(
-        "This is a test error."
-    )
+    logger.error("This is a test error.")
