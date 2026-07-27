@@ -2,11 +2,11 @@ import json
 import re
 import string
 from collections import Counter
+from itertools import pairwise
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 INPUT_PATH = Path(
     "outputs/predictions/calibration_final_decisions.jsonl"
@@ -154,10 +154,7 @@ def bin_accuracy(
     mean_confidence = []
     mean_accuracy = []
 
-    for lower, upper in zip(
-        edges[:-1],
-        edges[1:],
-    ):
+    for lower, upper in pairwise(edges):
         mask = (
             (confidences >= lower)
             & (confidences < upper)

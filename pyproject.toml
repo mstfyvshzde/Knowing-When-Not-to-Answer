@@ -1,3 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=src.evaluation.metrics --cov-report=term-missing"
+[tool.ruff]
+exclude = [
+    "notebooks",
+    ".venv",
+    "htmlcov",
+]
