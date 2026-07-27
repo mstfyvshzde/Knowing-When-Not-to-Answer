@@ -3,3 +3,4 @@ numpy>=1.26,<3.0
 datasets>=2.20,<5.0
 torch>=2.2
 transformers>=4.45,<5.0
+matplotlib>=3.8,<4.0
