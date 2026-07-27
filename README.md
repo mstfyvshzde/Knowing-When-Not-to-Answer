@@ -2,9 +2,13 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![Research](https://img.shields.io/badge/Research-Selective%20QA-orange)
-![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
+![Contributions](https://img.shields.io/badge/
+Contributions-Welcome-brightgreen)
+
 
 # Knowing When Not to Answer
+
+[![Python Tests](https://github.com/mstfyvshzde/Knowing-When-Not-to-Answer/actions/workflows/tests.yml/badge.svg)](https://github.com/mstfyvshzde/Knowing-When-Not-to-Answer/actions/workflows/tests.yml)
 
 > A modular research framework for reliable selective question answering.
 
