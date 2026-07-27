@@ -137,7 +137,13 @@ The planned evaluation includes:
 - Ablation studies
 - Baseline benchmarking
 
-> Experimental figures and quantitative results will be added after running the complete evaluation pipeline.
+### Risk–Coverage Analysis
+
+<p align="center">
+  <img src="assets/figures/risk_coverage.png" alt="Risk–coverage curves" width="75%">
+</p>
+
+The confidence-only baseline achieves the lowest AURC and consistently lower risk across most coverage levels. Adding the current question-aware semantic verifier does not improve selective prediction performance, indicating that the verifier requires further refinement.
 
 ## Reproducibility
 
