@@ -1,0 +1,10 @@
+name: knowing-when-not-to-answer
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r requirements.txt
