@@ -97,3 +97,7 @@ outputs/analysis/**/annotation_template.csv
 outputs/tables/example.csv
 outputs/predictions/example.json
 outputs/predictions/example.jsonl
+
+!outputs/tables/
+outputs/tables/*
+!outputs/tables/random_abstention_multi_seed_metrics.json

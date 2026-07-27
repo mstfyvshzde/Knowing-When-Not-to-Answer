@@ -1,0 +1,2018 @@
+{
+  "input_path": "outputs/predictions/raw_baseline_calibration.jsonl",
+  "total_predictions": 200,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "results": [
+    {
+      "coverage": 0.1,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.1,
+        "actual_coverage": 0.1,
+        "answered_per_seed": 20,
+        "mean_answer_accuracy": 0.4525,
+        "answer_accuracy_std": 0.11453711188955307,
+        "min_answer_accuracy": 0.25,
+        "max_answer_accuracy": 0.7,
+        "mean_selective_risk": 0.5475,
+        "selective_risk_std": 0.11453711188955307,
+        "min_selective_risk": 0.30000000000000004,
+        "max_selective_risk": 0.75
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.3,
+          "selective_risk": 0.7,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.6,
+          "selective_risk": 0.4,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.6,
+          "selective_risk": 0.4,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.35,
+          "selective_risk": 0.65,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.35,
+          "selective_risk": 0.65,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.4,
+          "selective_risk": 0.6,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.3,
+          "selective_risk": 0.7,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.7,
+          "selective_risk": 0.30000000000000004,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.35,
+          "selective_risk": 0.65,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.25,
+          "selective_risk": 0.75,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.4,
+          "selective_risk": 0.6,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.6,
+          "selective_risk": 0.4,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.9
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.1,
+          "actual_coverage": 0.1,
+          "answered": 20,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.9
+        }
+      ]
+    },
+    {
+      "coverage": 0.2,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.2,
+        "actual_coverage": 0.2,
+        "answered_per_seed": 40,
+        "mean_answer_accuracy": 0.45125000000000004,
+        "answer_accuracy_std": 0.0788491439395508,
+        "min_answer_accuracy": 0.3,
+        "max_answer_accuracy": 0.575,
+        "mean_selective_risk": 0.54875,
+        "selective_risk_std": 0.0788491439395508,
+        "min_selective_risk": 0.42500000000000004,
+        "max_selective_risk": 0.7
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.3,
+          "selective_risk": 0.7,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.55,
+          "selective_risk": 0.44999999999999996,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.575,
+          "selective_risk": 0.42500000000000004,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.35,
+          "selective_risk": 0.65,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.55,
+          "selective_risk": 0.44999999999999996,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.3,
+          "selective_risk": 0.7,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.525,
+          "selective_risk": 0.475,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.325,
+          "selective_risk": 0.675,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.8
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.2,
+          "actual_coverage": 0.2,
+          "answered": 40,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.8
+        }
+      ]
+    },
+    {
+      "coverage": 0.3,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.3,
+        "actual_coverage": 0.3,
+        "answered_per_seed": 60,
+        "mean_answer_accuracy": 0.4666666666666667,
+        "answer_accuracy_std": 0.06078194176270157,
+        "min_answer_accuracy": 0.3333333333333333,
+        "max_answer_accuracy": 0.6,
+        "mean_selective_risk": 0.5333333333333333,
+        "selective_risk_std": 0.060781941762701575,
+        "min_selective_risk": 0.4,
+        "max_selective_risk": 0.6666666666666667
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.3333333333333333,
+          "selective_risk": 0.6666666666666667,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.4,
+          "selective_risk": 0.6,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.6,
+          "selective_risk": 0.4,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.55,
+          "selective_risk": 0.44999999999999996,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.55,
+          "selective_risk": 0.44999999999999996,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.36666666666666664,
+          "selective_risk": 0.6333333333333333,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.4166666666666667,
+          "selective_risk": 0.5833333333333333,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.4166666666666667,
+          "selective_risk": 0.5833333333333333,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.7
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.3,
+          "actual_coverage": 0.3,
+          "answered": 60,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.7
+        }
+      ]
+    },
+    {
+      "coverage": 0.4,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.4,
+        "actual_coverage": 0.4,
+        "answered_per_seed": 80,
+        "mean_answer_accuracy": 0.46312499999999995,
+        "answer_accuracy_std": 0.03718093429433962,
+        "min_answer_accuracy": 0.4,
+        "max_answer_accuracy": 0.55,
+        "mean_selective_risk": 0.536875,
+        "selective_risk_std": 0.037180934294339614,
+        "min_selective_risk": 0.44999999999999996,
+        "max_selective_risk": 0.6
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4875,
+          "selective_risk": 0.5125,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.5375,
+          "selective_risk": 0.4625,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.5125,
+          "selective_risk": 0.48750000000000004,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4,
+          "selective_risk": 0.6,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.55,
+          "selective_risk": 0.44999999999999996,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.6
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.4,
+          "actual_coverage": 0.4,
+          "answered": 80,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.6
+        }
+      ]
+    },
+    {
+      "coverage": 0.5,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.5,
+        "actual_coverage": 0.5,
+        "answered_per_seed": 100,
+        "mean_answer_accuracy": 0.4535,
+        "answer_accuracy_std": 0.028332843133014377,
+        "min_answer_accuracy": 0.42,
+        "max_answer_accuracy": 0.51,
+        "mean_selective_risk": 0.5465000000000001,
+        "selective_risk_std": 0.028332843133014405,
+        "min_selective_risk": 0.49,
+        "max_selective_risk": 0.5800000000000001
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.42,
+          "selective_risk": 0.5800000000000001,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.48,
+          "selective_risk": 0.52,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.51,
+          "selective_risk": 0.49,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.48,
+          "selective_risk": 0.52,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.49,
+          "selective_risk": 0.51,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.48,
+          "selective_risk": 0.52,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.42,
+          "selective_risk": 0.5800000000000001,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.44,
+          "selective_risk": 0.56,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.44,
+          "selective_risk": 0.56,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.48,
+          "selective_risk": 0.52,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.42,
+          "selective_risk": 0.5800000000000001,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.49,
+          "selective_risk": 0.51,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.42,
+          "selective_risk": 0.5800000000000001,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.43,
+          "selective_risk": 0.5700000000000001,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.47,
+          "selective_risk": 0.53,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.42,
+          "selective_risk": 0.5800000000000001,
+          "abstain_rate": 0.5
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.5,
+          "actual_coverage": 0.5,
+          "answered": 100,
+          "answer_accuracy": 0.43,
+          "selective_risk": 0.5700000000000001,
+          "abstain_rate": 0.5
+        }
+      ]
+    },
+    {
+      "coverage": 0.6,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.6,
+        "actual_coverage": 0.6,
+        "answered_per_seed": 120,
+        "mean_answer_accuracy": 0.44958333333333333,
+        "answer_accuracy_std": 0.03089801773577068,
+        "min_answer_accuracy": 0.39166666666666666,
+        "max_answer_accuracy": 0.5083333333333333,
+        "mean_selective_risk": 0.5504166666666667,
+        "selective_risk_std": 0.030898017735770677,
+        "min_selective_risk": 0.4916666666666667,
+        "max_selective_risk": 0.6083333333333334
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.43333333333333335,
+          "selective_risk": 0.5666666666666667,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.5083333333333333,
+          "selective_risk": 0.4916666666666667,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.44166666666666665,
+          "selective_risk": 0.5583333333333333,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.44166666666666665,
+          "selective_risk": 0.5583333333333333,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.49166666666666664,
+          "selective_risk": 0.5083333333333333,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.48333333333333334,
+          "selective_risk": 0.5166666666666666,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.39166666666666666,
+          "selective_risk": 0.6083333333333334,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.4583333333333333,
+          "selective_risk": 0.5416666666666667,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.4166666666666667,
+          "selective_risk": 0.5833333333333333,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.4666666666666667,
+          "selective_risk": 0.5333333333333333,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.4,
+          "selective_risk": 0.6,
+          "abstain_rate": 0.4
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.6,
+          "actual_coverage": 0.6,
+          "answered": 120,
+          "answer_accuracy": 0.4583333333333333,
+          "selective_risk": 0.5416666666666667,
+          "abstain_rate": 0.4
+        }
+      ]
+    },
+    {
+      "coverage": 0.7,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.7,
+        "actual_coverage": 0.7,
+        "answered_per_seed": 140,
+        "mean_answer_accuracy": 0.45071428571428573,
+        "answer_accuracy_std": 0.02524371006724613,
+        "min_answer_accuracy": 0.39285714285714285,
+        "max_answer_accuracy": 0.5,
+        "mean_selective_risk": 0.5492857142857143,
+        "selective_risk_std": 0.02524371006724613,
+        "min_selective_risk": 0.5,
+        "max_selective_risk": 0.6071428571428572
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.5,
+          "selective_risk": 0.5,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.42857142857142855,
+          "selective_risk": 0.5714285714285714,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.44285714285714284,
+          "selective_risk": 0.5571428571428572,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45714285714285713,
+          "selective_risk": 0.5428571428571429,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.4785714285714286,
+          "selective_risk": 0.5214285714285714,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.4857142857142857,
+          "selective_risk": 0.5142857142857142,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.39285714285714285,
+          "selective_risk": 0.6071428571428572,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.4142857142857143,
+          "selective_risk": 0.5857142857142856,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45714285714285713,
+          "selective_risk": 0.5428571428571429,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45714285714285713,
+          "selective_risk": 0.5428571428571429,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.42857142857142855,
+          "selective_risk": 0.5714285714285714,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.4785714285714286,
+          "selective_risk": 0.5214285714285714,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45714285714285713,
+          "selective_risk": 0.5428571428571429,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.44285714285714284,
+          "selective_risk": 0.5571428571428572,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45714285714285713,
+          "selective_risk": 0.5428571428571429,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.4642857142857143,
+          "selective_risk": 0.5357142857142857,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.4142857142857143,
+          "selective_risk": 0.5857142857142856,
+          "abstain_rate": 0.3
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.7,
+          "actual_coverage": 0.7,
+          "answered": 140,
+          "answer_accuracy": 0.45714285714285713,
+          "selective_risk": 0.5428571428571429,
+          "abstain_rate": 0.3
+        }
+      ]
+    },
+    {
+      "coverage": 0.8,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.8,
+        "actual_coverage": 0.8,
+        "answered_per_seed": 160,
+        "mean_answer_accuracy": 0.44625000000000004,
+        "answer_accuracy_std": 0.020000000000000004,
+        "min_answer_accuracy": 0.39375,
+        "max_answer_accuracy": 0.48125,
+        "mean_selective_risk": 0.55375,
+        "selective_risk_std": 0.01999999999999999,
+        "min_selective_risk": 0.51875,
+        "max_selective_risk": 0.60625
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.48125,
+          "selective_risk": 0.51875,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.425,
+          "selective_risk": 0.575,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.43125,
+          "selective_risk": 0.56875,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.46875,
+          "selective_risk": 0.53125,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.39375,
+          "selective_risk": 0.60625,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.43125,
+          "selective_risk": 0.56875,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.475,
+          "selective_risk": 0.525,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.45625,
+          "selective_risk": 0.54375,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4625,
+          "selective_risk": 0.5375,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.4375,
+          "selective_risk": 0.5625,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.43125,
+          "selective_risk": 0.56875,
+          "abstain_rate": 0.2
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.8,
+          "actual_coverage": 0.8,
+          "answered": 160,
+          "answer_accuracy": 0.44375,
+          "selective_risk": 0.55625,
+          "abstain_rate": 0.2
+        }
+      ]
+    },
+    {
+      "coverage": 0.9,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 0.9,
+        "actual_coverage": 0.9,
+        "answered_per_seed": 180,
+        "mean_answer_accuracy": 0.445,
+        "answer_accuracy_std": 0.01150684176511555,
+        "min_answer_accuracy": 0.4222222222222222,
+        "max_answer_accuracy": 0.4666666666666667,
+        "mean_selective_risk": 0.5549999999999999,
+        "selective_risk_std": 0.011506841765115532,
+        "min_selective_risk": 0.5333333333333333,
+        "max_selective_risk": 0.5777777777777777
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4388888888888889,
+          "selective_risk": 0.5611111111111111,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 1,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4666666666666667,
+          "selective_risk": 0.5333333333333333,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 2,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4388888888888889,
+          "selective_risk": 0.5611111111111111,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 3,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4388888888888889,
+          "selective_risk": 0.5611111111111111,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 4,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.43333333333333335,
+          "selective_risk": 0.5666666666666667,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 5,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 6,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4444444444444444,
+          "selective_risk": 0.5555555555555556,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 7,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4666666666666667,
+          "selective_risk": 0.5333333333333333,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 8,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.42777777777777776,
+          "selective_risk": 0.5722222222222222,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 9,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4222222222222222,
+          "selective_risk": 0.5777777777777777,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 10,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.46111111111111114,
+          "selective_risk": 0.5388888888888889,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 11,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.45555555555555555,
+          "selective_risk": 0.5444444444444445,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 12,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4388888888888889,
+          "selective_risk": 0.5611111111111111,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 13,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 14,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.43333333333333335,
+          "selective_risk": 0.5666666666666667,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 15,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 16,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4444444444444444,
+          "selective_risk": 0.5555555555555556,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 17,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4444444444444444,
+          "selective_risk": 0.5555555555555556,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 18,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.4444444444444444,
+          "selective_risk": 0.5555555555555556,
+          "abstain_rate": 0.1
+        },
+        {
+          "seed": 19,
+          "target_coverage": 0.9,
+          "actual_coverage": 0.9,
+          "answered": 180,
+          "answer_accuracy": 0.45,
+          "selective_risk": 0.55,
+          "abstain_rate": 0.1
+        }
+      ]
+    },
+    {
+      "coverage": 1.0,
+      "summary": {
+        "number_of_seeds": 20,
+        "target_coverage": 1.0,
+        "actual_coverage": 1.0,
+        "answered_per_seed": 200,
+        "mean_answer_accuracy": 0.445,
+        "answer_accuracy_std": 0.0,
+        "min_answer_accuracy": 0.445,
+        "max_answer_accuracy": 0.445,
+        "mean_selective_risk": 0.5549999999999999,
+        "selective_risk_std": 0.0,
+        "min_selective_risk": 0.5549999999999999,
+        "max_selective_risk": 0.5549999999999999
+      },
+      "runs": [
+        {
+          "seed": 0,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 1,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 2,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 3,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 4,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 5,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 6,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 7,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 8,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 9,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 10,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 11,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 12,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 13,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 14,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 15,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 16,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 17,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 18,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        },
+        {
+          "seed": 19,
+          "target_coverage": 1.0,
+          "actual_coverage": 1.0,
+          "answered": 200,
+          "answer_accuracy": 0.445,
+          "selective_risk": 0.5549999999999999,
+          "abstain_rate": 0.0
+        }
+      ]
+    }
+  ]
+}
