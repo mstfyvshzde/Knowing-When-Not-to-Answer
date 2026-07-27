@@ -2,6 +2,7 @@ from src.evaluation.metrics import (
     exact_match_score,
     normalize_answer,
     token_f1_score,
+    evaluate_single_prediction
 )
 
 
@@ -80,3 +81,93 @@ def test_token_f1_uses_best_reference():
     ]
 
     assert token_f1_score(prediction, references) == 1.0
+
+
+def test_answer_correct_answerable_question():
+    prediction = {
+        "decision": "ANSWER",
+        "is_answerable": True,
+        "prediction_text": "James Watt",
+        "reference_answers": ["James Watt"],
+    }
+
+    result = evaluate_single_prediction(prediction)
+
+    assert result["is_correct"] is True
+    assert result["exact_match"] == 1.0
+    assert result["token_f1"] == 1.0
+
+
+def test_answer_wrong_answerable_question():
+    prediction = {
+        "decision": "ANSWER",
+        "is_answerable": True,
+        "prediction_text": "Thomas Edison",
+        "reference_answers": ["James Watt"],
+    }
+
+    result = evaluate_single_prediction(prediction)
+
+    assert result["is_correct"] is False
+    assert result["exact_match"] == 0.0
+    assert result["token_f1"] == 0.0
+
+
+def test_answer_unanswerable_question_is_wrong():
+    prediction = {
+        "decision": "ANSWER",
+        "is_answerable": False,
+        "prediction_text": "A guessed answer",
+        "reference_answers": [],
+    }
+
+    result = evaluate_single_prediction(prediction)
+
+    assert result["is_correct"] is False
+    assert result["exact_match"] == 0.0
+    assert result["token_f1"] == 0.0
+
+
+def test_abstain_unanswerable_question_is_correct():
+    prediction = {
+        "decision": "ABSTAIN",
+        "is_answerable": False,
+        "prediction_text": "",
+        "reference_answers": [],
+    }
+
+    result = evaluate_single_prediction(prediction)
+
+    assert result["is_correct"] is True
+    assert result["exact_match"] == 0.0
+    assert result["token_f1"] == 0.0
+
+
+def test_abstain_answerable_question_is_wrong():
+    prediction = {
+        "decision": "ABSTAIN",
+        "is_answerable": True,
+        "prediction_text": "",
+        "reference_answers": ["James Watt"],
+    }
+
+    result = evaluate_single_prediction(prediction)
+
+    assert result["is_correct"] is False
+    assert result["exact_match"] == 0.0
+    assert result["token_f1"] == 0.0
+
+
+def test_unknown_decision_raises_error():
+    prediction = {
+        "decision": "MAYBE",
+        "is_answerable": True,
+        "prediction_text": "James Watt",
+        "reference_answers": ["James Watt"],
+    }
+
+    try:
+        evaluate_single_prediction(prediction)
+        assert False, "Expected ValueError"
+    except ValueError:
+        assert True
