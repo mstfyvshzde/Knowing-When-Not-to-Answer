@@ -267,9 +267,7 @@ def verity_predictions(
             "context"
         ]  # context, sorunun cevabını bulmak için modele verilen kaynak metindir
 
-        generated_answer = prediction[
-            "prediction_text"  # modelin ürettiği cevap metni
-        ]
+        generated_answer = prediction["prediction_text"]  # modelin ürettiği cevap metni
 
         # Verifier modeline aynı question ve context'i veriyoruz.
 
@@ -285,7 +283,7 @@ def verity_predictions(
 
         # Verifier çıktısını üç evidence label'dan
         # birine dönüştürüyoruz.
-        (evidence_label, evidence_reason, answer_match) = classify_evidence(
+        evidence_label, evidence_reason, answer_match = classify_evidence(
             generated_answer=generated_answer,
             verifier_answer=verifier_answer,
             verifier_score=verifier_score,

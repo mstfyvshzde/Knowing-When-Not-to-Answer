@@ -8,13 +8,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-INPUT_PATH = Path(
-    "outputs/predictions/calibration_final_decisions.jsonl"
-)
+INPUT_PATH = Path("outputs/predictions/calibration_final_decisions.jsonl")
 
-OUTPUT_PATH = Path(
-    "assets/figures/calibration_curve.png"
-)
+OUTPUT_PATH = Path("assets/figures/calibration_curve.png")
 
 RELAXED_F1_THRESHOLD = 0.80
 
@@ -23,9 +19,7 @@ def normalize_answer(text: str) -> str:
     text = text.lower()
 
     text = "".join(
-        character
-        for character in text
-        if character not in string.punctuation
+        character for character in text if character not in string.punctuation
     )
 
     text = re.sub(r"\b(a|an|the)\b", " ", text)
@@ -42,10 +36,7 @@ def exact_match_score(
 
     return max(
         (
-            float(
-                normalized_prediction
-                == normalize_answer(reference)
-            )
+            float(normalized_prediction == normalize_answer(reference))
             for reference in references
         ),
         default=0.0,
@@ -76,10 +67,7 @@ def token_f1_score(
             precision = overlap / len(prediction_tokens)
             recall = overlap / len(reference_tokens)
 
-            score = (
-                2 * precision * recall
-                / (precision + recall)
-            )
+            score = 2 * precision * recall / (precision + recall)
 
         best_score = max(best_score, score)
 
@@ -104,10 +92,7 @@ def calculate_correctness(row: dict) -> int:
         references,
     )
 
-    return int(
-        exact_match == 1.0
-        or token_f1 >= RELAXED_F1_THRESHOLD
-    )
+    return int(exact_match == 1.0 or token_f1 >= RELAXED_F1_THRESHOLD)
 
 
 def load_predictions(path: Path):
@@ -125,17 +110,11 @@ def load_predictions(path: Path):
             ):
                 continue
 
-            uncalibrated.append(
-                row["uncalibrated_confidence"]
-            )
+            uncalibrated.append(row["uncalibrated_confidence"])
 
-            calibrated.append(
-                row["calibrated_confidence"]
-            )
+            calibrated.append(row["calibrated_confidence"])
 
-            correctness.append(
-                calculate_correctness(row)
-            )
+            correctness.append(calculate_correctness(row))
 
     return (
         np.array(uncalibrated),
@@ -155,40 +134,27 @@ def bin_accuracy(
     mean_accuracy = []
 
     for lower, upper in pairwise(edges):
-        mask = (
-            (confidences >= lower)
-            & (confidences < upper)
-        )
+        mask = (confidences >= lower) & (confidences < upper)
 
         if upper == 1.0:
-            mask = (
-                (confidences >= lower)
-                & (confidences <= upper)
-            )
+            mask = (confidences >= lower) & (confidences <= upper)
 
         if not np.any(mask):
             continue
 
-        mean_confidence.append(
-            confidences[mask].mean()
-        )
+        mean_confidence.append(confidences[mask].mean())
 
-        mean_accuracy.append(
-            correctness[mask].mean()
-        )
+        mean_accuracy.append(correctness[mask].mean())
 
     return mean_confidence, mean_accuracy
+
 
 def generate_ablation_figure():
     import pandas as pd
 
-    input_path = Path(
-        "outputs/evaluation/question_aware_ablation/ablation_summary.csv"
-    )
+    input_path = Path("outputs/evaluation/question_aware_ablation/ablation_summary.csv")
 
-    output_path = Path(
-        "assets/figures/ablation_results.png"
-    )
+    output_path = Path("assets/figures/ablation_results.png")
 
     df = pd.read_csv(input_path)
 
@@ -254,6 +220,7 @@ def generate_ablation_figure():
     plt.close()
 
     print(f"Saved figure to: {output_path}")
+
 
 def main():
     (

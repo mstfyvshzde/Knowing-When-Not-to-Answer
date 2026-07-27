@@ -50,7 +50,6 @@ def test_exact_match_accepts_any_reference():
     assert exact_match_score(prediction, references) == 1.0
 
 
-
 def test_token_f1_perfect_match():
     prediction = "artificial intelligence"
     references = ["artificial intelligence"]

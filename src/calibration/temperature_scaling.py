@@ -291,9 +291,7 @@ def run_temperature_scaling(
 
     margins, labels = prepare_calibration_data(predictions)
 
-    (temperature, nll_before, nll_after) = fit_temperature(
-        margins=margins, labels=labels
-    )
+    temperature, nll_before, nll_after = fit_temperature(margins=margins, labels=labels)
 
     calibrated_predictions = apply_temperature(
         predictions=predictions, temperature=temperature
