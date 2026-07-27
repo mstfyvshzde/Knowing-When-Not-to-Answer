@@ -131,14 +131,14 @@ The decision engine combines calibrated confidence and evidence verification to 
 
 ### Risk–Coverage Analysis
 
-The selective prediction performance was evaluated using the Area Under the Risk–Coverage Curve (AURC), where lower values indicate better selective prediction performance.
+The selective prediction performance was evaluated on **5,000 test examples** using the Area Under the Risk–Coverage Curve (AURC), where lower values indicate better selective prediction performance.
 
-| Method | AURC |
-|--------|------:|
-| Confidence only | **0.289** |
-| Confidence + Question-aware semantic V2 | 0.337 |
-| Question-aware semantic V2 | 0.391 |
-| Old semantic verifier | 0.395 |
+| Method | AURC | Full Accuracy |
+|--------|-----:|--------------:|
+| Confidence only | **0.289** | 0.423 |
+| Confidence + Question-aware semantic V2 | 0.337 | 0.423 |
+| Question-aware semantic V2 | 0.391 | 0.423 |
+| Old semantic verifier | 0.395 | 0.423 |
 
 The confidence-only baseline achieved the lowest AURC in this experiment. While the proposed semantic verification methods provide additional reasoning signals, they did not improve selective prediction performance on this benchmark.
 
