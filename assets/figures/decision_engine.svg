@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
+    </marker>
+
+    <style>
+      .title {
+        font: 700 30px Arial, sans-serif;
+        fill: #0F172A;
+        text-anchor: middle;
+      }
+
+      .subtitle {
+        font: 500 16px Arial, sans-serif;
+        fill: #64748B;
+        text-anchor: middle;
+      }
+
+      .box {
+        fill: #FFFFFF;
+        stroke: #2563EB;
+        stroke-width: 2;
+      }
+
+      .decision {
+        fill: #EFF6FF;
+        stroke: #2563EB;
+        stroke-width: 2;
+      }
+
+      .label {
+        font: 700 18px Arial, sans-serif;
+        fill: #0F172A;
+        text-anchor: middle;
+      }
+
+      .desc {
+        font: 14px Arial, sans-serif;
+        fill: #475569;
+        text-anchor: middle;
+      }
+
+      .edge-label {
+        font: 700 14px Arial, sans-serif;
+        fill: #475569;
+        text-anchor: middle;
+      }
+
+      .arrow {
+        stroke: #64748B;
+        stroke-width: 3;
+        fill: none;
+        marker-end: url(#arrow);
+      }
+    </style>
+  </defs>
+
+  <rect width="1400" height="760" rx="24" fill="#F8FAFC"/>
+
+  <text x="700" y="55" class="title">Selective Decision Engine</text>
+  <text x="700" y="86" class="subtitle">
+    Confidence-aware answering, verification, and abstention
+  </text>
+
+  <!-- Input -->
+  <rect x="545" y="125" width="310" height="90" rx="16" class="box"/>
+  <text x="700" y="162" class="label">Model Prediction</text>
+  <text x="700" y="188" class="desc">
+    Answer candidate and uncertainty signals
+  </text>
+
+  <!-- Arrow to confidence -->
+  <line x1="700" y1="215" x2="700" y2="265" class="arrow"/>
+
+  <!-- Confidence decision -->
+  <polygon
+    points="700,265 860,350 700,435 540,350"
+    class="decision"
+  />
+
+  <text x="700" y="340" class="label">Confidence</text>
+  <text x="700" y="365" class="desc">above threshold?</text>
+
+  <!-- High confidence path -->
+  <line x1="860" y1="350" x2="1015" y2="350" class="arrow"/>
+  <text x="930" y="330" class="edge-label">Yes</text>
+
+  <rect x="1015" y="305" width="260" height="90" rx="16" class="box"/>
+  <text x="1145" y="342" class="label">Accept Answer</text>
+  <text x="1145" y="368" class="desc">Return the model response</text>
+
+  <!-- Low confidence path -->
+  <line x1="700" y1="435" x2="700" y2="485" class="arrow"/>
+  <text x="735" y="465" class="edge-label">No</text>
+
+  <!-- Evidence decision -->
+  <polygon
+    points="700,485 860,570 700,655 540,570"
+    class="decision"
+  />
+
+  <text x="700" y="558" class="label">Evidence</text>
+  <text x="700" y="583" class="desc">supports the answer?</text>
+
+  <!-- Supported path -->
+  <line x1="860" y1="570" x2="1015" y2="570" class="arrow"/>
+  <text x="930" y="550" class="edge-label">Yes</text>
+
+  <rect x="1015" y="525" width="260" height="90" rx="16" class="box"/>
+  <text x="1145" y="562" class="label">Verify Answer</text>
+  <text x="1145" y="588" class="desc">Return with evidence support</text>
+
+  <!-- Unsupported path -->
+  <line x1="540" y1="570" x2="385" y2="570" class="arrow"/>
+  <text x="470" y="550" class="edge-label">No</text>
+
+  <rect x="125" y="525" width="260" height="90" rx="16" class="box"/>
+  <text x="255" y="562" class="label">Abstain</text>
+  <text x="255" y="588" class="desc">Do not return an unreliable answer</text>
+
+  <!-- Outcome labels -->
+  <rect x="1015" y="425" width="260" height="42" rx="10" fill="#ECFDF5" stroke="#16A34A"/>
+  <text x="1145" y="452" class="desc">High-confidence outcome</text>
+
+  <rect x="1015" y="645" width="260" height="42" rx="10" fill="#FFF7ED" stroke="#EA580C"/>
+  <text x="1145" y="672" class="desc">Evidence-supported outcome</text>
+
+  <rect x="125" y="645" width="260" height="42" rx="10" fill="#FEF2F2" stroke="#DC2626"/>
+  <text x="255" y="672" class="desc">Safe refusal outcome</text>
+</svg>

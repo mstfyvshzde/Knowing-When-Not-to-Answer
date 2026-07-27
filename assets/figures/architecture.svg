@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720">
+
+<style>
+.title { font:700 28px Arial, sans-serif; fill:#0F172A; }
+.subtitle { font:500 16px Arial, sans-serif; fill:#64748B; }
+.box { fill:#FFFFFF; stroke:#2563EB; stroke-width:2; rx:14; }
+.module { font:700 18px Arial,sans-serif; fill:#111827; text-anchor:middle;}
+.desc { font:14px Arial,sans-serif; fill:#475569; text-anchor:middle;}
+.arrow { stroke:#64748B; stroke-width:3; fill:none; marker-end:url(#arrow);}
+</style>
+
+<defs>
+<marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+<path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
+</marker>
+</defs>
+
+<rect width="1400" height="720" fill="#F8FAFC"/>
+
+<text x="700" y="55" class="title" text-anchor="middle">
+System Architecture
+</text>
+
+<text x="700" y="85" class="subtitle" text-anchor="middle">
+Knowing When Not to Answer
+</text>
+
+<!-- DATA -->
+<rect class="box" x="90" y="160" width="210" height="120"/>
+<text class="module" x="195" y="205">Data Module</text>
+<text class="desc" x="195" y="235">Dataset Loading</text>
+<text class="desc" x="195" y="258">Preprocessing</text>
+
+<!-- BASELINE -->
+<rect class="box" x="420" y="160" width="210" height="120"/>
+<text class="module" x="525" y="205">Baseline Models</text>
+<text class="desc" x="525" y="235">LLM Prediction</text>
+<text class="desc" x="525" y="258">Answer Generation</text>
+
+<!-- CONF -->
+<rect class="box" x="760" y="160" width="210" height="120"/>
+<text class="module" x="865" y="205">Confidence Module</text>
+<text class="desc" x="865" y="235">Confidence Score</text>
+<text class="desc" x="865" y="258">Uncertainty</text>
+
+<!-- VERIFY -->
+<rect class="box" x="1100" y="160" width="210" height="120"/>
+<text class="module" x="1205" y="205">Verification</text>
+<text class="desc" x="1205" y="235">Evidence Checking</text>
+<text class="desc" x="1205" y="258">Consistency</text>
+
+<!-- DECISION -->
+<rect class="box" x="595" y="420" width="210" height="130"/>
+<text class="module" x="700" y="465">Decision Engine</text>
+<text class="desc" x="700" y="495">Accept</text>
+<text class="desc" x="700" y="520">Verify</text>
+<text class="desc" x="700" y="545">Abstain</text>
+
+<!-- OUTPUT -->
+<rect class="box" x="1045" y="420" width="230" height="130"/>
+<text class="module" x="1160" y="465">Evaluation</text>
+<text class="desc" x="1160" y="495">Risk-Coverage</text>
+<text class="desc" x="1160" y="520">Calibration</text>
+<text class="desc" x="1160" y="545">Error Analysis</text>
+
+<!-- Arrows -->
+<line class="arrow" x1="300" y1="220" x2="420" y2="220"/>
+<line class="arrow" x1="630" y1="220" x2="760" y2="220"/>
+<line class="arrow" x1="970" y1="220" x2="1100" y2="220"/>
+
+<line class="arrow" x1="1205" y1="280" x2="1205" y2="360"/>
+<line class="arrow" x1="1205" y1="360" x2="805" y2="360"/>
+<line class="arrow" x1="805" y1="360" x2="805" y2="420"/>
+
+<line class="arrow" x1="805" y1="485" x2="1045" y2="485"/>
+
+</svg>

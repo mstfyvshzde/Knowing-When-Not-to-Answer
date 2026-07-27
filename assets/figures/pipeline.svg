@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="220" viewBox="0 0 1200 220">
+
+<style>
+.title { font: bold 18px Arial, sans-serif; fill:#111827; }
+.box { fill:#ffffff; stroke:#2563EB; stroke-width:2; rx:12; }
+.text { font: 14px Arial, sans-serif; fill:#111827; text-anchor:middle; dominant-baseline:middle;}
+.arrow { stroke:#64748B; stroke-width:2.5; fill:none; marker-end:url(#arrow);}
+</style>
+
+<defs>
+<marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+<path d="M0,0 L8,3 L0,6 Z" fill="#64748B"/>
+</marker>
+</defs>
+
+<text x="600" y="35" class="title" text-anchor="middle">
+Research Pipeline
+</text>
+
+<rect class="box" x="30" y="80" width="120" height="60"/>
+<text class="text" x="90" y="110">Dataset</text>
+
+<line class="arrow" x1="150" y1="110" x2="190" y2="110"/>
+
+<rect class="box" x="190" y="80" width="140" height="60"/>
+<text class="text" x="260" y="110">Baseline LLM</text>
+
+<line class="arrow" x1="330" y1="110" x2="370" y2="110"/>
+
+<rect class="box" x="370" y="80" width="160" height="60"/>
+<text class="text" x="450" y="110">Confidence</text>
+<text class="text" x="450" y="128">Estimation</text>
+
+<line class="arrow" x1="530" y1="110" x2="570" y2="110"/>
+
+<rect class="box" x="570" y="80" width="160" height="60"/>
+<text class="text" x="650" y="110">Calibration</text>
+
+<line class="arrow" x1="730" y1="110" x2="770" y2="110"/>
+
+<rect class="box" x="770" y="80" width="170" height="60"/>
+<text class="text" x="855" y="110">Evidence</text>
+<text class="text" x="855" y="128">Verification</text>
+
+<line class="arrow" x1="940" y1="110" x2="980" y2="110"/>
+
+<rect class="box" x="980" y="80" width="170" height="60"/>
+<text class="text" x="1065" y="110">Decision</text>
+<text class="text" x="1065" y="128">Engine</text>
+
+<line class="arrow" x1="1065" y1="140" x2="1065" y2="175"/>
+
+<line class="arrow" x1="1065" y1="175" x2="965" y2="175"/>
+<line class="arrow" x1="1065" y1="175" x2="1165" y2="175"/>
+
+<rect class="box" x="900" y="175" width="120" height="40"/>
+<text class="text" x="960" y="195">Answer</text>
+
+<rect class="box" x="1040" y="175" width="120" height="40"/>
+<text class="text" x="1100" y="195">Verify</text>
+
+<rect class="box" x="1180" y="175" width="120" height="40"/>
+<text class="text" x="1240" y="195">Abstain</text>
+
+</svg>
