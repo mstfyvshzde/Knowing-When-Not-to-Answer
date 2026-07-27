@@ -1,5 +1,5 @@
 method,score_field,total_records,full_accuracy,aurc,normalized_aurc
-Confidence only,calibrated_confidence,200,0.445,0.23038801749279203,0.09559763929663022
-Old semantic verifier only,entailment_probability,200,0.445,0.3832194703953599,0.521401781605946
-Question-aware semantic V2,qa_entailment_probability; invalid claims=0,200,0.445,0.3576525688698976,0.4501697651014866
-Confidence + question-aware semantic V2,sqrt(calibrated_confidence * qa_entailment_probability); invalid claims=0,200,0.445,0.2933736975729591,0.27108222034947366
+Confidence only,calibrated_confidence,5000,0.4228,0.28943817343926337,0.20925482680207846
+Old semantic verifier only,entailment_probability,5000,0.4228,0.3950433454841489,0.4994489121583024
+Question-aware semantic V2,qa_entailment_probability; invalid claims=0,5000,0.4228,0.3910403749807591,0.4884490876095066
+Confidence + question-aware semantic V2,sqrt(calibrated_confidence * qa_entailment_probability); invalid claims=0,5000,0.4228,0.3370270130096025,0.3400249349783046
