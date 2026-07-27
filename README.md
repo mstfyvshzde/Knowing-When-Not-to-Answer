@@ -2,8 +2,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![Research](https://img.shields.io/badge/Research-Selective%20QA-orange)
-![Contributions](https://img.shields.io/badge/
-Contributions-Welcome-brightgreen)
+![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
 
 
 # Knowing When Not to Answer
