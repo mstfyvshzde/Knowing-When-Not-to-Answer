@@ -1,0 +1,348 @@
+"""Compare confidence, hybrid, and random risk-coverage baselines."""
+
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+from typing import Any
+
+RISK_COVERAGE_DIR = Path("outputs/evaluation/risk_coverage")
+
+CONFIDENCE_CURVE_PATH = RISK_COVERAGE_DIR / "confidence_risk_coverage_curve.csv"
+HYBRID_CURVE_PATH = RISK_COVERAGE_DIR / "hybrid_risk_coverage_curve.csv"
+RISK_COVERAGE_SUMMARY_PATH = RISK_COVERAGE_DIR / "risk_coverage_summary.json"
+RANDOM_RESULTS_PATH = Path("outputs/tables/random_abstention_multi_seed_metrics.json")
+
+OUTPUT_CSV_PATH = RISK_COVERAGE_DIR / "baseline_risk_coverage_comparison.csv"
+OUTPUT_JSON_PATH = RISK_COVERAGE_DIR / "baseline_risk_coverage_comparison.json"
+
+TARGET_COVERAGES = tuple(index / 10 for index in range(1, 11))
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    """Load a JSON object from disk."""
+    if not path.exists():
+        raise FileNotFoundError(f"Required file not found: {path}")
+
+    with path.open(encoding="utf-8") as file:
+        data = json.load(file)
+
+    if not isinstance(data, dict):
+        raise TypeError(f"Expected a JSON object in {path}")
+
+    return data
+
+
+def load_risk_coverage_curve(path: Path) -> list[dict[str, float]]:
+    """Load a risk-coverage curve CSV."""
+    if not path.exists():
+        raise FileNotFoundError(f"Required file not found: {path}")
+
+    rows: list[dict[str, float]] = []
+
+    with path.open(encoding="utf-8", newline="") as file:
+        reader = csv.DictReader(file)
+
+        required_columns = {
+            "answered",
+            "coverage",
+            "selective_accuracy",
+            "selective_risk",
+            "minimum_score",
+        }
+
+        if reader.fieldnames is None:
+            raise ValueError(f"CSV file has no header: {path}")
+
+        missing_columns = required_columns - set(reader.fieldnames)
+
+        if missing_columns:
+            missing = ", ".join(sorted(missing_columns))
+            raise ValueError(f"Missing required columns in {path}: {missing}")
+
+        for row in reader:
+            rows.append(
+                {
+                    "answered": float(row["answered"]),
+                    "coverage": float(row["coverage"]),
+                    "selective_accuracy": float(row["selective_accuracy"]),
+                    "selective_risk": float(row["selective_risk"]),
+                    "minimum_score": float(row["minimum_score"]),
+                }
+            )
+
+    if not rows:
+        raise ValueError(f"No curve rows found in {path}")
+
+    return sorted(rows, key=lambda row: row["coverage"])
+
+
+def nearest_curve_point(
+    curve: list[dict[str, float]],
+    target_coverage: float,
+) -> dict[str, float]:
+    """Return the curve point nearest to the requested coverage."""
+    return min(
+        curve,
+        key=lambda row: (
+            abs(row["coverage"] - target_coverage),
+            row["coverage"],
+        ),
+    )
+
+
+def load_random_results(
+    path: Path,
+) -> dict[float, dict[str, float]]:
+    """Load random-abstention summaries indexed by coverage."""
+    data = load_json(path)
+    raw_results = data.get("results")
+
+    if not isinstance(raw_results, list):
+        raise TypeError(f"Expected 'results' to be a list in {path}")
+
+    results: dict[float, dict[str, float]] = {}
+
+    for item in raw_results:
+        if not isinstance(item, dict):
+            raise TypeError(f"Every random result must be an object in {path}")
+
+        coverage = item.get("coverage")
+        summary = item.get("summary")
+
+        if not isinstance(coverage, (int, float)):
+            raise TypeError(f"Random result has invalid coverage in {path}")
+
+        if not isinstance(summary, dict):
+            raise TypeError(f"Random result has invalid summary in {path}")
+
+        results[round(float(coverage), 10)] = {
+            "coverage": float(summary.get("actual_coverage", coverage)),
+            "selective_accuracy": float(summary["mean_answer_accuracy"]),
+            "selective_risk": float(summary["mean_selective_risk"]),
+            "risk_std": float(summary["selective_risk_std"]),
+            "minimum_risk": float(summary["min_selective_risk"]),
+            "maximum_risk": float(summary["max_selective_risk"]),
+            "number_of_seeds": float(summary["number_of_seeds"]),
+        }
+
+    return results
+
+
+def trapezoidal_area(points: list[tuple[float, float]]) -> float:
+    """Compute area under a curve using the trapezoidal rule."""
+    ordered_points = sorted(points)
+
+    area = 0.0
+
+    for index in range(1, len(ordered_points)):
+        previous_x, previous_y = ordered_points[index - 1]
+        current_x, current_y = ordered_points[index]
+
+        width = current_x - previous_x
+        average_height = (previous_y + current_y) / 2
+        area += width * average_height
+
+    return area
+
+
+def build_comparison_rows(
+    confidence_curve: list[dict[str, float]],
+    hybrid_curve: list[dict[str, float]],
+    random_results: dict[float, dict[str, float]],
+) -> list[dict[str, float]]:
+    """Build matched-coverage comparison rows."""
+    comparison_rows: list[dict[str, float]] = []
+
+    for target_coverage in TARGET_COVERAGES:
+        confidence = nearest_curve_point(
+            confidence_curve,
+            target_coverage,
+        )
+        hybrid = nearest_curve_point(
+            hybrid_curve,
+            target_coverage,
+        )
+
+        random_key = round(target_coverage, 10)
+
+        if random_key not in random_results:
+            raise ValueError(
+                "Random baseline does not contain coverage " f"{target_coverage:.1f}"
+            )
+
+        random_result = random_results[random_key]
+
+        comparison_rows.append(
+            {
+                "target_coverage": target_coverage,
+                "confidence_coverage": confidence["coverage"],
+                "confidence_accuracy": confidence["selective_accuracy"],
+                "confidence_risk": confidence["selective_risk"],
+                "hybrid_coverage": hybrid["coverage"],
+                "hybrid_accuracy": hybrid["selective_accuracy"],
+                "hybrid_risk": hybrid["selective_risk"],
+                "random_coverage": random_result["coverage"],
+                "random_mean_accuracy": random_result["selective_accuracy"],
+                "random_mean_risk": random_result["selective_risk"],
+                "random_risk_std": random_result["risk_std"],
+                "random_minimum_risk": random_result["minimum_risk"],
+                "random_maximum_risk": random_result["maximum_risk"],
+                "confidence_vs_random_risk_improvement": (
+                    random_result["selective_risk"] - confidence["selective_risk"]
+                ),
+                "hybrid_vs_random_risk_improvement": (
+                    random_result["selective_risk"] - hybrid["selective_risk"]
+                ),
+                "hybrid_minus_confidence_risk": (
+                    hybrid["selective_risk"] - confidence["selective_risk"]
+                ),
+            }
+        )
+
+    return comparison_rows
+
+
+def write_csv(
+    path: Path,
+    rows: list[dict[str, float]],
+) -> None:
+    """Write comparison rows to CSV."""
+    if not rows:
+        raise ValueError("Cannot write an empty comparison CSV")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=list(rows[0].keys()),
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def build_output_summary(
+    rows: list[dict[str, float]],
+    risk_coverage_summary: dict[str, Any],
+    random_results: dict[float, dict[str, float]],
+) -> dict[str, Any]:
+    """Build the JSON comparison summary."""
+    random_points = [(0.0, 0.0)]
+
+    random_points.extend(
+        (
+            result["coverage"],
+            result["selective_risk"],
+        )
+        for _, result in sorted(random_results.items())
+    )
+
+    random_aurc = trapezoidal_area(random_points)
+
+    confidence_aurc = float(risk_coverage_summary["confidence_aurc"])
+    hybrid_aurc = float(risk_coverage_summary["hybrid_aurc"])
+
+    best_method_by_coverage = []
+
+    for row in rows:
+        risks = {
+            "confidence": row["confidence_risk"],
+            "hybrid": row["hybrid_risk"],
+            "random": row["random_mean_risk"],
+        }
+
+        best_method = min(risks, key=risks.get)
+
+        best_method_by_coverage.append(
+            {
+                "coverage": row["target_coverage"],
+                "best_method": best_method,
+                "lowest_risk": risks[best_method],
+            }
+        )
+
+    aurc_values = {
+        "confidence": confidence_aurc,
+        "hybrid": hybrid_aurc,
+        "random": random_aurc,
+    }
+
+    best_aurc_method = min(
+        aurc_values,
+        key=aurc_values.get,
+    )
+
+    return {
+        "inputs": {
+            "confidence_curve": str(CONFIDENCE_CURVE_PATH),
+            "hybrid_curve": str(HYBRID_CURVE_PATH),
+            "risk_coverage_summary": str(RISK_COVERAGE_SUMMARY_PATH),
+            "random_results": str(RANDOM_RESULTS_PATH),
+        },
+        "total_predictions": risk_coverage_summary.get("total_predictions"),
+        "target_coverages": list(TARGET_COVERAGES),
+        "random_seed_count": int(
+            next(iter(random_results.values()))["number_of_seeds"]
+        ),
+        "aurc": aurc_values,
+        "best_aurc_method": best_aurc_method,
+        "best_aurc": aurc_values[best_aurc_method],
+        "aurc_improvement_over_random": {
+            "confidence": random_aurc - confidence_aurc,
+            "hybrid": random_aurc - hybrid_aurc,
+        },
+        "best_method_by_coverage": best_method_by_coverage,
+        "comparison_rows": rows,
+    }
+
+
+def main() -> None:
+    """Run the baseline comparison."""
+    confidence_curve = load_risk_coverage_curve(CONFIDENCE_CURVE_PATH)
+    hybrid_curve = load_risk_coverage_curve(HYBRID_CURVE_PATH)
+    random_results = load_random_results(RANDOM_RESULTS_PATH)
+    risk_coverage_summary = load_json(RISK_COVERAGE_SUMMARY_PATH)
+
+    comparison_rows = build_comparison_rows(
+        confidence_curve=confidence_curve,
+        hybrid_curve=hybrid_curve,
+        random_results=random_results,
+    )
+
+    output_summary = build_output_summary(
+        rows=comparison_rows,
+        risk_coverage_summary=risk_coverage_summary,
+        random_results=random_results,
+    )
+
+    write_csv(
+        OUTPUT_CSV_PATH,
+        comparison_rows,
+    )
+
+    OUTPUT_JSON_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    OUTPUT_JSON_PATH.write_text(
+        json.dumps(output_summary, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    print("Baseline risk-coverage comparison completed.")
+    print(f"CSV:  {OUTPUT_CSV_PATH}")
+    print(f"JSON: {OUTPUT_JSON_PATH}")
+    print()
+    print("AURC values:")
+
+    for method, aurc in output_summary["aurc"].items():
+        print(f"  {method}: {aurc:.6f}")
+
+    print()
+    print("Best AURC method: " f"{output_summary['best_aurc_method']}")
+
+
+if __name__ == "__main__":
+    main()
