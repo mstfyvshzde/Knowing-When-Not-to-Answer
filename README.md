@@ -124,58 +124,20 @@ The framework is organised into modular components for data processing, predicti
 
 The decision engine combines calibrated confidence and evidence verification to determine whether the system should answer directly, verify the response, or abstain when reliability is insufficient.
 
-
 ## Experimental Results
 
-The proposed framework is evaluated through a comprehensive experimental pipeline that includes baseline comparisons, confidence calibration, evidence verification, and ablation studies.
+The experimental evaluation is currently in progress.
 
-The evaluation focuses on the following aspects:
+The planned evaluation includes:
 
-* Selective question answering performance
-* Risk–coverage trade-off
-* Confidence calibration quality
-* Evidence verification effectiveness
-* Decision policy analysis
-* Ablation studies for individual framework components
+- Risk–coverage analysis
+- Confidence calibration
+- Evidence verification effectiveness
+- Decision-policy comparison
+- Ablation studies
+- Baseline benchmarking
 
-Experimental figures, quantitative results, and detailed analyses are available in the `outputs/` and `docs/` directories and will be presented in future releases of this repository.
-
-### Risk–Coverage Curve
-
-<p align="center">
-  <img src="assets/figures/risk_coverage.png" width="75%">
-</p>
-
-The proposed framework achieves a lower risk than baseline methods across a wide range of coverage levels, demonstrating more reliable selective answering.
-
-
-### Confidence Calibration
-
-<p align="center">
-  <img src="assets/figures/calibration_curve.png" width="75%">
-</p>
-
-The calibration analysis demonstrates that the proposed confidence estimation is substantially better aligned with empirical correctness than the baseline model, leading to more reliable confidence scores.
-
-
-### Ablation Study
-
-<p align="center">
-  <img src="assets/figures/ablation_results.png" width="75%">
-</p>
-
-The ablation study evaluates the contribution of each component in the selective answering pipeline, showing the impact of calibration, verification, and the decision engine on overall performance.
-
-
-### Overall Performance
-
-| Method | Accuracy | ECE ↓ | Risk ↓ | Coverage ↑ |
-|---------|---------:|------:|--------:|-----------:|
-| Baseline | 81.2 | 0.142 | 0.188 | 100% |
-| + Confidence | 83.5 | 0.101 | 0.143 | 94% |
-| + Calibration | 85.1 | 0.058 | 0.107 | 91% |
-| **Proposed Method** | **87.4** | **0.031** | **0.072** | **89%** |
-
+> Experimental figures and quantitative results will be added after running the complete evaluation pipeline.
 
 ## Reproducibility
 
