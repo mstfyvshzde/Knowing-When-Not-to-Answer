@@ -51,6 +51,7 @@ def apply_random_abstention(
         updated_prediction.update(
             {
                 "decision": "ANSWER" if should_answer else "ABSTAIN",
+                "final_decision": "ANSWER" if should_answer else "ABSTAIN",
                 "final_answer": (
                     prediction.get("prediction_text", "")
                     if should_answer
