@@ -1,8 +1,9 @@
 from src.evaluation.metrics import (
+    calculate_metrics,
+    evaluate_single_prediction,
     exact_match_score,
     normalize_answer,
     token_f1_score,
-    evaluate_single_prediction
 )
 
 
@@ -168,6 +169,112 @@ def test_unknown_decision_raises_error():
 
     try:
         evaluate_single_prediction(prediction)
+        assert False, "Expected ValueError"
+    except ValueError:
+        assert True
+
+
+def test_calculate_metrics_for_mixed_predictions():
+    predictions = [
+        {
+            "decision": "ANSWER",
+            "is_answerable": True,
+            "prediction_text": "James Watt",
+            "reference_answers": ["James Watt"],
+        },
+        {
+            "decision": "ANSWER",
+            "is_answerable": True,
+            "prediction_text": "Thomas Edison",
+            "reference_answers": ["James Watt"],
+        },
+        {
+            "decision": "ABSTAIN",
+            "is_answerable": False,
+            "prediction_text": "",
+            "reference_answers": [],
+        },
+        {
+            "decision": "ABSTAIN",
+            "is_answerable": True,
+            "prediction_text": "",
+            "reference_answers": ["Paris"],
+        },
+    ]
+
+    metrics = calculate_metrics(predictions)
+
+    assert metrics["total"] == 4
+    assert metrics["answered"] == 2
+    assert metrics["abstained"] == 2
+    assert metrics["total_correct"] == 2
+
+    assert metrics["accuracy"] == 0.5
+    assert metrics["coverage"] == 0.5
+    assert metrics["abstention_rate"] == 0.5
+
+    assert metrics["answered_accuracy"] == 0.5
+    assert metrics["selective_risk"] == 0.5
+
+    assert metrics["unnecessary_abstentions"] == 1
+    assert metrics["correct_abstentions"] == 1
+
+
+def test_calculate_metrics_when_all_predictions_are_answered():
+    predictions = [
+        {
+            "decision": "ANSWER",
+            "is_answerable": True,
+            "prediction_text": "Paris",
+            "reference_answers": ["Paris"],
+        },
+        {
+            "decision": "ANSWER",
+            "is_answerable": False,
+            "prediction_text": "London",
+            "reference_answers": [],
+        },
+    ]
+
+    metrics = calculate_metrics(predictions)
+
+    assert metrics["coverage"] == 1.0
+    assert metrics["abstention_rate"] == 0.0
+    assert metrics["answered_accuracy"] == 0.5
+    assert metrics["selective_risk"] == 0.5
+    assert metrics["answered_unanswerable"] == 1
+    assert metrics["unanswerable_answer_rate"] == 1.0
+
+
+def test_calculate_metrics_when_all_predictions_are_abstained():
+    predictions = [
+        {
+            "decision": "ABSTAIN",
+            "is_answerable": False,
+            "prediction_text": "",
+            "reference_answers": [],
+        },
+        {
+            "decision": "ABSTAIN",
+            "is_answerable": True,
+            "prediction_text": "",
+            "reference_answers": ["Paris"],
+        },
+    ]
+
+    metrics = calculate_metrics(predictions)
+
+    assert metrics["coverage"] == 0.0
+    assert metrics["abstention_rate"] == 1.0
+    assert metrics["answered_accuracy"] == 0.0
+    assert metrics["selective_risk"] == 0.0
+    assert metrics["correct_abstentions"] == 1
+    assert metrics["unnecessary_abstentions"] == 1
+
+
+def test_calculate_metrics_rejects_empty_input():
+    try:
+        calculate_metrics([])
         assert False, "Expected ValueError"
     except ValueError:
         assert True
