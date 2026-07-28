@@ -1,252 +1,175 @@
 """
-Input/output utilities for experiment files.
-
-Bu dosyanın görevi:
-- Python verilerini JSON olarak kaydetmek
-- Her prediction'ı ayrı satırda JSONL olarak kaydetmek
-- Sonuç tablolarını CSV olarak kaydetmek
-- Kaydedilmiş JSON ve JSONL dosyalarını yeniden okumak
+This file manages input and output operations for the whole project.
+In simple terms, it helps the project:
+- create folders when needed
+- save Python data as JSON
+- load JSON files
+- save multiple records as JSONL
+- load JSONL records
+- save table-like data as CSV
+So instead of rewriting file-handling code in every part of the project, other files can simply import these helper functions.
 """
 
-import csv
-import json
-from pathlib import Path
-from typing import Any
+
+import csv # Read and write CSV files.
+import json # Convert Python objects to and from JSON.
+from pathlib import Path # Create and manage file paths safely across operating systems.
+from typing import Any # Allow a function to accept values of any data type.
 
 
-def ensure_parent_directory(path: str | Path) -> Path:
-    """
-    Dosyanın kaydedileceği üst klasörleri oluşturur.
-
-    Örnek:
-        path = "outputs/predictions/results.json"
-
-    Eğer outputs/predictions klasörü yoksa otomatik oluşturur.
-
-    Returns:
-        Path nesnesi olarak dosya yolunu döndürür.
-    """
-
-    # String yolu Path nesnesine çeviriyoruz.
+# Write a utility function that guarantees the parent directory exists before saving a file.
+def ensure_parent_directory(
+    path: str | Path
+) -> Path:
+    # Converts a string path into a Path object with useful file methods.
     file_path = Path(path)
+    main_directory = file_path.parent
 
-    # Dosyanın kendisini değil, bulunduğu üst klasörü alıyoruz.
-    # Örnek:
-    # outputs/predictions/results.json
-    # parent → outputs/predictions
-    file_path.parent.mkdir(
+    main_directory.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
     return file_path
 
 
+# Save a Python object as a JSON file.
 def save_json(
-    data: Any,
+    data: str | Any,
     path: str | Path,
-    indent: int = 2,
+    indent: int = 4
 ) -> None:
-    """
-    Python verisini JSON dosyası olarak kaydeder.
-
-    Kullanılabilecek veri örnekleri:
-    - dictionary
-    - list
-    - string
-    - number
-
-    Örnek:
-        save_json(
-            {"accuracy": 0.82},
-            "outputs/tables/metrics.json"
-        )
-    """
-
-    # Üst klasör yoksa oluşturuyoruz.
     file_path = ensure_parent_directory(path)
 
-    # Dosyayı yazma modunda açıyoruz.
+    # Opens the file safely and automatically closes it afterwards.
     with file_path.open(
-        "w",
-        encoding="utf-8",
+        'w',
+        encoding='utf-8'
     ) as file:
-        # Python nesnesini JSON formatına çevirip kaydediyoruz.
+        # Writes a Python object into a JSON file.
         json.dump(
             data,
             file,
-            indent=indent,
-            # Türkçe veya başka Unicode karakterlerin
-            # bozulmadan kaydedilmesini sağlar.
-            ensure_ascii=False,
+            indent=indent, # Controls the number of spaces used for indentation, making JSON
+            ensure_ascii=False # Preserves Unicode characters (e.g., Ş, ə, ğ) instead of converting them to escape sequences.
         )
 
 
-def load_json(path: str | Path) -> Any:
-    """
-    JSON dosyasını okuyup Python verisine dönüştürür.
-
-    Örnek:
-        metrics = load_json(
-            "outputs/tables/metrics.json"
-        )
-    """
-
+# Load data from a JSON file and convert it into a Python object.
+def load_json(
+    path: str | Path
+) -> object:
     file_path = Path(path)
 
-    # Dosya yoksa anlaşılır hata mesajı veriyoruz.
     if not file_path.exists():
-        raise FileNotFoundError(f"JSON file not found: {file_path}")
+        raise FileNotFoundError(f'JSON file not found: {file_path}')
 
-    # Dosyayı okuma modunda açıyoruz.
     with file_path.open(
-        "r",
-        encoding="utf-8",
+        'r',
+        encoding='utf-8'
     ) as file:
-        # JSON içeriğini Python dictionary veya list'e çevirir.
-        return json.load(file)
+        # Reads JSON content from an opened file and converts it into a Python object.
+        data = json.load(
+            file
+        )
+
+    return data
 
 
+# Save multiple dictionaries in JSON Lines format.
 def save_jsonl(
     records: list[dict[str, Any]],
-    path: str | Path,
+    path: str | Path
 ) -> None:
-    """
-    Prediction kayıtlarını JSON Lines formatında kaydeder.
-
-    JSONL formatında her satır ayrı bir JSON nesnesidir.
-
-    Örnek dosya:
-
-        {"id": "1", "answer": "Paris"}
-        {"id": "2", "answer": "London"}
-
-    Bu format büyük prediction dosyaları için kullanışlıdır.
-    """
-
     file_path = ensure_parent_directory(path)
 
     with file_path.open(
         "w",
-        encoding="utf-8",
+        encoding="utf-8"
     ) as file:
-        # Her prediction kaydını tek tek işliyoruz.
         for record in records:
-            # Dictionary'yi JSON metnine çeviriyoruz.
-            json_line = json.dumps(
-                record,
-                ensure_ascii=False,
-            )
-
-            # Her JSON kaydını ayrı satıra yazıyoruz.
+            json_line = json.dumps(record) # converts a Python dictionary into a JSON string.
             file.write(json_line + "\n")
 
 
+
+# This function reads a JSONL file and returns all JSON objects as Python dictionaries.
 def load_jsonl(
     path: str | Path,
 ) -> list[dict[str, Any]]:
-    """
-    JSONL dosyasındaki bütün kayıtları okur.
+    input_path = Path(path)
 
-    Returns:
-        Her satırdaki JSON nesnelerini içeren bir liste.
-    """
+    if not input_path.exists():
+        raise FileNotFoundError(
+            f"Input file does not exist: {input_path}"
+        )
 
-    file_path = Path(path)
-
-    if not file_path.exists():
-        raise FileNotFoundError(f"JSONL file not found: {file_path}")
-
-    # Okunan bütün prediction'lar burada tutulacak.
     records: list[dict[str, Any]] = []
 
-    with file_path.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
-        # Satır numarasını da takip ediyoruz.
-        # Hatalı JSON varsa hangi satırda olduğunu söyleyebiliriz.
-        for line_number, line in enumerate(
-            file,
-            start=1,
-        ):
-            # Satır başı ve sonundaki boşlukları temizliyoruz.
+    with input_path.open(
+        "r", 
+        encoding="utf-8"
+    ) as input_file:
+        for line_number, line in enumerate(input_file, start=1):
             stripped_line = line.strip()
 
-            # Boş satırları görmezden geliyoruz.
             if not stripped_line:
                 continue
 
+            # does not simply store the line. It converts a JSON string into a Python object
             try:
-                # JSON satırını Python dictionary'ye çeviriyoruz.
                 record = json.loads(stripped_line)
-                records.append(record)
 
             except json.JSONDecodeError as error:
-                # JSON bozuksa hangi satırda hata olduğunu gösteriyoruz.
                 raise ValueError(
-                    f"Invalid JSON on line {line_number}: {file_path}"
+                    f"Invalid JSON at line {line_number}: {error}"
                 ) from error
+
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"Line {line_number} must contain a JSON object."
+                )
+
+            records.append(record)
+
+    if not records:
+        raise ValueError(
+            f"No records were found in {input_path}"
+        )
 
     return records
 
 
+# It converts a list of dictionaries into a CSV table.
 def save_csv(
     rows: list[dict[str, Any]],
     path: str | Path,
 ) -> None:
-    """
-    Dictionary listesini CSV tablosu olarak kaydeder.
 
-    Örnek:
-
-        rows = [
-            {
-                "system": "raw_baseline",
-                "accuracy": 0.70
-            },
-            {
-                "system": "verified",
-                "accuracy": 0.82
-            }
-        ]
-    """
-
-    # Boş listeyle CSV kolonlarını belirleyemeyiz.
     if not rows:
         raise ValueError("Cannot save an empty list to CSV.")
 
     file_path = ensure_parent_directory(path)
 
-    # İlk dictionary'nin key'lerini kolon isimleri kabul ediyoruz.
-    fieldnames = list(rows[0].keys())
+    field_names = list(rows[0].keys())
 
     with file_path.open(
         "w",
         encoding="utf-8",
-        # CSV dosyasında gereksiz boş satır oluşmasını önler.
         newline="",
     ) as file:
+        # Creates a writer that converts dictionaries into CSV rows.
         writer = csv.DictWriter(
             file,
-            fieldnames=fieldnames,
+            field_names=field_names,
         )
 
-        # İlk satıra kolon başlıklarını yazar.
-        writer.writeheader()
-
-        # Listedeki bütün dictionary'leri tablo satırı olarak yazar.
-        writer.writerows(rows)
+        writer.writeheader() # Writes column labels, not actual data.
+        writer.writerows(rows) # Writes all dictionaries as data rows.
 
 
+# It tests whether fnctions work
 if __name__ == "__main__":
-    """
-    Dosyanın fonksiyonlarını test etmek için örnek bölüm.
-
-    Terminal:
-        python -m src.utils.io
-    """
-
     example_predictions = [
         {
             "question_id": "example-1",
@@ -262,25 +185,21 @@ if __name__ == "__main__":
         },
     ]
 
-    # Normal JSON dosyası oluştur.
     save_json(
         example_predictions,
         "outputs/predictions/example.json",
     )
 
-    # Her prediction'ı ayrı satıra kaydet.
     save_jsonl(
         example_predictions,
         "outputs/predictions/example.jsonl",
     )
 
-    # Prediction'ları tablo olarak kaydet.
     save_csv(
         example_predictions,
         "outputs/tables/example.csv",
     )
 
-    # Kaydedilen JSON dosyasını yeniden oku.
     loaded_predictions = load_json("outputs/predictions/example.json")
 
     print("Loaded predictions:")
