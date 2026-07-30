@@ -1,135 +1,88 @@
 """
-Logging utilities for research experiments.
-
-Bu dosyanın görevi:
-- Deney ilerlemesini Terminal'de göstermek
-- Aynı mesajları log dosyasına kaydetmek
-- Hata, uyarı ve bilgi mesajlarını düzenli tutmak
+To create one logger that shows program messages in the terminal and, optionally, saves the same messages in a log file.
 """
+import logging # Logging records what the program is doing, including progress, warnings, and errors. It helps us debug experiments and keep a history of what happened.
+from pathlib import Path #  # Create and manage file paths safely across operating systems.
 
-import logging
-from pathlib import Path
 
-
+# To create one logger that shows program messages in the terminal and, optionally, saves the same messages in a log file.
 def setup_logger(
-    name: str = "research",
-    log_file: str | Path | None = None,
-    level: str = "INFO",
+    name: str = 'research', # Gives the logger an identity, such as "research" or "training".
+    log_file: str | Path | None = None, # Sets the file path where logs should be saved; None means terminal only.
+    level: str = 'INFO' # Sets the minimum importance level to record, such as "INFO", "WARNING", or "ERROR". (INFO -> Everything is working normally. (WARNING -> Something might become a problem. (ERROR -> Something went wrong.)))
 ) -> logging.Logger:
-    """
-    Create and configure a logger.
-
-    Args:
-        name:
-            Logger'ın adı.
-            Örnek: "raw_baseline"
-
-        log_file:
-            Logların kaydedileceği dosya yolu.
-            None verilirse yalnızca Terminal'e yazar.
-
-        level:
-            Hangi önem seviyesinden itibaren mesajların
-            gösterileceğini belirler.
-
-            Yaygın seviyeler:
-            - DEBUG
-            - INFO
-            - WARNING
-            - ERROR
-
-    Returns:
-        Ayarlanmış logging.Logger nesnesi.
-    """
-
-    # Verilen isimle bir logger oluşturuyoruz.
+    # It creates or retrieves a logger with the given name. That logger is the object you later use with logger.info(), logger.warning(), and logger.error().
     logger = logging.getLogger(name)
 
-    # "INFO" gibi metin değerini logging.INFO gibi
-    # sayısal bir değere çeviriyoruz.
+    # It converts the text level, such as "info", into logging’s numeric constant, such as logging.INFO.
+    # Because the logging system uses numeric levels internally, not plain text like "INFO". This line translates the user’s string into the value that logger.setLevel() understands.
     numeric_level = getattr(
         logging,
         level.upper(),
-        None,
+        None
     )
 
-    # Geçersiz bir logging seviyesi verilmişse hata veriyoruz.
     if not isinstance(numeric_level, int):
         raise TypeError(f"Invalid logging level: {level}")
 
-    # Logger'ın minimum mesaj seviyesini belirliyoruz.
+    # tells the logger which messages it should record.
     logger.setLevel(numeric_level)
 
-    # Mesajların ana/root logger'a tekrar gönderilmesini kapatıyoruz.
-    # Aksi hâlde aynı mesaj iki kez görünebilir.
+    # stops the log message from being passed to the root logger. Without it, the same message may appear twice.
     logger.propagate = False
 
-    # Logger daha önce ayarlanmışsa tekrar handler eklemiyoruz.
-    # Bu da duplicate log mesajlarını önler.
+    # This checks whether the logger already has handlers attached.
+    # If it does, the function returns the existing logger immediately so it does not add duplicate terminal or file handlers and print the same message twice.
     if logger.handlers:
         return logger
 
-    # Her log mesajının nasıl görüneceğini belirliyoruz.
+    # This defines how every log message will look.
+    # Example output:
+    # 2026-07-30 14:05:12 | INFO | research | Training started
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Terminal'e yazacak handler.
+    # This creates a handler that sends log messages to the terminal (console).
+    # Without it, logger.info(), logger.warning(), and logger.error() would not be displayed in the terminal.
     console_handler = logging.StreamHandler()
 
-    # Terminal mesajlarına belirlediğimiz formatı uygula.
     console_handler.setFormatter(formatter)
 
-    # Terminal handler'ını logger'a ekle.
     logger.addHandler(console_handler)
 
-    # Kullanıcı bir log dosyası verdiyse
-    # mesajları dosyaya da kaydediyoruz.
     if log_file is not None:
-        # String yolu Path nesnesine çeviriyoruz.
         log_path = Path(log_file)
 
-        # outputs/logs gibi üst klasörler yoksa oluşturuyoruz.
         log_path.parent.mkdir(
             parents=True,
-            exist_ok=True,
+            exist_ok=True
         )
 
-        # Log dosyasını UTF-8 biçiminde açacak handler.
         file_handler = logging.FileHandler(
             log_path,
-            encoding="utf-8",
+            encoding='utf-8'
         )
 
-        # Dosyadaki mesajlara aynı formatı uygula.
         file_handler.setFormatter(formatter)
 
-        # Dosya handler'ını logger'a ekle.
         logger.addHandler(file_handler)
+
 
     return logger
 
 
+
 if __name__ == "__main__":
-    """
-    Küçük test bölümü.
-
-    Terminal komutu:
-        python -m src.utils.logger
-    """
-
     logger = setup_logger(
         name="logger_test",
         log_file="outputs/logs/logger_test.log",
         level="INFO",
     )
 
-    # Normal bilgi mesajı.
     logger.info("Logger initialized successfully.")
 
-    # Bir uyarı mesajı.
     logger.warning("This is a test warning.")
 
-    # Örnek hata mesajı.
     logger.error("This is a test error.")
