@@ -1,3 +1,7 @@
+"""
+To load YAML configuration files, validate them, and merge several configuration dictionaries into one final configuration.
+"""
+
 from pathlib import Path # Create and manage file paths safely across operating systems.
 from typing import Any # Allow a function to accept values of any data type.
 
