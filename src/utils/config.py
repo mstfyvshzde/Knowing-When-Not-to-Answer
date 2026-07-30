@@ -1,173 +1,92 @@
-"""
-YAML configuration loading utilities.
+from pathlib import Path # Create and manage file paths safely across operating systems.
+from typing import Any # Allow a function to accept values of any data type.
 
-Bu dosyanın görevi:
-- YAML config dosyalarını okumak
-- Birden fazla config dosyasını birleştirmek
-- Deney ayarlarını Python dictionary olarak döndürmek
-"""
-
-from pathlib import Path
-from typing import Any
-
-import yaml
+import yaml # YAML is a human-readable file format used to store configuration data.
 
 
-def load_yaml(path: str | Path) -> dict[str, Any]:
-    """
-    Load a single YAML configuration file.
-
-    Örnek:
-        config = load_yaml("configs/base.yaml")
-
-    Dönen değer:
-        YAML içeriğini Python dictionary olarak döndürür.
-    """
-
-    # Gelen string yolu Path nesnesine çeviriyoruz.
-    # Path, dosya yollarını daha güvenli yönetmemizi sağlar.
+# To safely read one YAML configuration file and return its contents as a Python dictionary.
+def load_yaml(
+    path: str | Path
+) -> dict[str, Any]:
     config_path = Path(path)
-
-    # Dosya gerçekten var mı kontrol ediyoruz.
+    
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-    # Yanlışlıkla JSON veya TXT dosyası verilmesini engelliyoruz.
-    if config_path.suffix not in {".yaml", ".yml"}:
+    # Accept only YAML file extensions.
+    if config_path.suffix not in {".yaml", '.yml'}:
         raise ValueError(f"Expected a YAML file, received: {config_path}")
 
-    # YAML dosyasını okuma modunda açıyoruz.
-    with config_path.open("r", encoding="utf-8") as file:
-        # safe_load YAML içeriğini Python dictionary'ye çevirir.
-        # safe_load kullanmak, yaml.load kullanmaktan daha güvenlidir.
+    with config_path.open(
+        'r',
+        encoding='utf-8'
+    ) as file:
+        # reads YAML content and converts it into a Python object, usually a dictionary.
         config = yaml.safe_load(file)
 
-    # YAML dosyası tamamen boşsa safe_load None döndürür.
-    # Bu durumda boş dictionary döndürüyoruz.
-    if config is None:
-        return {}
+        if config is None:
+            return {}
 
-    # Config'in dictionary olması gerekir.
-    # Örneğin dosyanın tamamı sadece bir listeyse hata veririz.
-    if not isinstance(config, dict):
-        raise TypeError(f"Configuration must contain a dictionary: {config_path}")
+        if not isinstance(config, dict):
+            raise TypeError(
+                f'Configuration must contain a dictionary: {config_path}'
+            )
 
-    return config
+        return config
 
 
+
+# To combine two dictionaries recursively, while letting values from override replace matching values in base.
 def deep_merge(
     base: dict[str, Any],
-    override: dict[str, Any],
+    override: dict[str, Any]
 ) -> dict[str, Any]:
-    """
-    Recursively merge two dictionaries.
-
-    base:
-        Ana ayarlar.
-
-    override:
-        Ana ayarların üzerine yazılacak yeni ayarlar.
-
-    Örnek:
-
-        base = {
-            "model": {
-                "name": "roberta",
-                "batch_size": 16
-            }
-        }
-
-        override = {
-            "model": {
-                "batch_size": 32
-            }
-        }
-
-        Sonuç:
-
-        {
-            "model": {
-                "name": "roberta",
-                "batch_size": 32
-            }
-        }
-    """
-
-    # Orijinal base dictionary'yi değiştirmemek için kopyalıyoruz.
     merged = base.copy()
 
-    # Override içindeki her key-value çiftini inceliyoruz.
     for key, value in override.items():
-        # Aynı key iki dictionary içinde de varsa
-        # iç içe dictionary'leri recursive(bir fonksiyonun problemi çözmek için kendi kendini çağırması) olarak birleştiriyoruz.
-        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+        if (
+            key in merged 
+            and isinstance(merged[key], dict) 
+            and isinstance(value, dict)
+        ):
             merged[key] = deep_merge(
                 merged[key],
-                value,
+                value
             )
 
         else:
-            # Key yeni ise eklenir.
-            # Key zaten varsa override değeri base değerinin üzerine yazılır.
             merged[key] = value
 
     return merged
 
 
+
+# Loads multiple YAML configuration files and merges them into one Python dictionary.
 def load_config(
-    config_paths: list[str | Path],
+    config_paths: list[str | Path]
 ) -> dict[str, Any]:
-    """
-    Load and merge multiple YAML configuration files.
-
-    Örnek:
-
-        config = load_config(
-            [
-                "configs/base.yaml",
-                "configs/dataset.yaml",
-                "configs/model.yaml",
-            ]
+    
+    if not config_paths:
+        raise ValueError(
+            'At least one configuration file is required.'
         )
 
-    Dosyalar verilen sırayla birleştirilir.
-
-    Daha sonra gelen config dosyası,
-    önceki config içindeki aynı değerin üzerine yazabilir.
-    """
-
-    # En az bir config dosyası verilmesini zorunlu tutuyoruz.
-    if not config_paths:
-        raise ValueError("At least one configuration file is required.")
-
-    # Bütün config dosyaları bunun içinde birleşecek.
     combined_config: dict[str, Any] = {}
 
-    # Dosyaları sırayla okuyoruz.
     for config_path in config_paths:
-        # Tek bir YAML dosyasını dictionary olarak yükle.
         current_config = load_yaml(config_path)
 
-        # Yeni config'i önceki config'lerle birleştir.
         combined_config = deep_merge(
             combined_config,
-            current_config,
+            current_config
         )
 
     return combined_config
 
 
+
+
 if __name__ == "__main__":
-    """
-    Bu blok yalnızca dosya doğrudan çalıştırıldığında çalışır.
-
-    Terminal komutu:
-
-        python -m src.utils.config
-
-    Başka dosyadan import edildiğinde bu bölüm çalışmaz.
-    """
-
     config = load_config(
         [
             "configs/base.yaml",
@@ -178,7 +97,6 @@ if __name__ == "__main__":
         ]
     )
 
-    # Birleşmiş config'i okunabilir YAML formatında terminale yazdır.
     print(
         yaml.safe_dump(
             config,
