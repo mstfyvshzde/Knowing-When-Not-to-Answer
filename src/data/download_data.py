@@ -3,11 +3,10 @@ To download the SQuAD v2 dataset from Hugging Face, verify that it contains data
 """
 
 # shutil is used for high-level file and folder operations, such as copying, moving, or deleting them.
-import shutil  
+import shutil
 
 # Create and manage file paths safely across operating systems.
-from pathlib import Path 
-
+from pathlib import Path
 
 # DatasetDict represents datasets split into parts like train and validation.
 # load_dataset downloads or loads a dataset, usually from Hugging Face.
@@ -19,9 +18,8 @@ DATASET_NAME = "rajpurkar/squad_v2"
 OUTPUT_DIR = Path("data/raw/squad_v2")
 
 
-
 def download_dataset(
-    overwrite: bool = False # overwrite=False means the function should not replace an existing dataset folder by default.
+    overwrite: bool = False,  # overwrite=False means the function should not replace an existing dataset folder by default.
 ) -> DatasetDict:
     if OUTPUT_DIR.exists():
         # stops replacement when overwrite permission is not given.
@@ -35,10 +33,7 @@ def download_dataset(
         shutil.rmtree(OUTPUT_DIR)
 
     # creates the parent folder if it does not exist.
-    OUTPUT_DIR.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    OUTPUT_DIR.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Downloading dataset: {DATASET_NAME}")
 
@@ -46,9 +41,7 @@ def download_dataset(
 
     # checks whether the downloaded object has dataset splits like train and validation.
     if not isinstance(dataset, DatasetDict):
-        raise TypeError(
-            "Expected load_dataset() to return a DatasetDict."
-        )
+        raise TypeError("Expected load_dataset() to return a DatasetDict.")
 
     dataset.save_to_disk(str(OUTPUT_DIR))
 
