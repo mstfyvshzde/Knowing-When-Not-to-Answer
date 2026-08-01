@@ -1,0 +1,5 @@
+method,score_field,total_records,full_accuracy,aurc,normalized_aurc
+Confidence only,calibrated_confidence,1000,0.411,0.3093410332234119,0.23412847117581476
+Old semantic verifier only,entailment_probability,1000,0.411,0.3906418964152393,0.45677828321346486
+Question-aware semantic V2,qa_entailment_probability; invalid claims=0,1000,0.411,0.41340856860563174,0.5191268867203368
+Confidence + question-aware semantic V2,sqrt(calibrated_confidence * qa_entailment_probability); invalid claims=0,1000,0.411,0.36452531389422005,0.3852556454322311
