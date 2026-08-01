@@ -37,7 +37,7 @@ OUTPUT_DIR = Path("outputs/predictions")
 
 # chooses which hardware PyTorch should use:
 # We need it so the model runs on the best available hardware instead of always using the CPU. A GPU can make inference much faster, while the availability checks prevent the program from requesting hardware that does not exist.
-def selecet_device(device_name: str) -> torch.device:
+def select_device(device_name: str) -> torch.device:
     if device_name == "cuda":
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA was requested but isnt avalable yet")
@@ -98,7 +98,7 @@ def run_raw_baseline(
 
         dataset = dataset.select(range(min(limit, len(dataset))))
 
-    device = selecet_device(device_name)
+    device = select_device(device_name)
 
     print(f"Loading model: {MODEL_NAME}")
     print(f"Using device: {device}")
