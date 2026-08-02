@@ -1,46 +1,47 @@
 """
-Random abstention baseline.
-
-This baseline randomly selects an exact number of predictions according to the
-requested coverage and abstains otherwise.
-
-It is intended as a control baseline for selective question answering.
+The main purpose of this file is to create a random abstention baseline for comparison.
+It randomly selects which predictions will be answered according to a target coverage, marks the rest as ABSTAIN, calculates decision statistics, and saves the results. Unlike the confidence baseline, it does not use model confidence—its decisions are random but reproducible with a fixed seed.
 """
 
+# argparse is used to read command-line arguments when you run the script from the terminal.
 import argparse
 import random
+
+# is used to create and manage file paths safely.
 from pathlib import Path
+
+# Any is a flexible type hint that allows a variable or dictionary value to contain any Python data type.
 from typing import Any
 
 from src.utils.io import load_jsonl, save_jsonl
 
 DEFAULT_INPUT_PATH = Path("outputs/predictions/raw_baseline_calibration.jsonl")
 DEFAULT_OUTPUT_DIR = Path("outputs/predictions")
-DEFAULT_SEED = 42
+DEFAULT_SEED = 17
 
 
+# randomly decides whether to ANSWER or ABSTAIN for each prediction to achieve a target coverage.
+# It updates the predictions with these random decisions and returns the modified list.
 def apply_random_abstention(
-    predictions: list[dict[str, Any]],
-    coverage: float,
-    seed: int = DEFAULT_SEED,
+    predictions: list[dict[str, Any]], coverage: float, seed: int = DEFAULT_SEED
 ) -> list[dict[str, Any]]:
-    """
-    Randomly select an exact number of predictions to answer.
-    """
-
     if not 0.0 <= coverage <= 1.0:
         raise ValueError("Coverage must be between 0 and 1.")
 
     total_predictions = len(predictions)
     answer_count = round(total_predictions * coverage)
 
+    # Creates a separate random number generator with a fixed seed.
+    # The same seed produces the same random choices every time, which makes the experiment reproducible without changing Python's global random state.
+
+    # Example:
+    # rng = random.Random(17)
+    # rng.sample(range(10), k=3)  -> always selects the same 3 indices
     rng = random.Random(seed)
-    answer_indices = set(
-        rng.sample(
-            range(total_predictions),
-            k=answer_count,
-        )
-    )
+
+    # stores the indices of predictions that the system will answer.
+    # Example: if it becomes {1, 4, 7}, only predictions at indices 1, 4, and 7 will be marked ANSWER; the others will be ABSTAIN.
+    answer_indices = set(rng.sample(range(total_predictions), k=answer_count))
 
     updated_predictions: list[dict[str, Any]] = []
 
@@ -68,19 +69,15 @@ def apply_random_abstention(
     return updated_predictions
 
 
-def summarize_decisions(
-    predictions: list[dict[str, Any]],
-) -> dict[str, float | int]:
-    """
-    Summarize answer and abstention counts.
-    """
-
+# calculates overall results from the prediction list.
+def summarize_decisions(predictions: list[dict[str, Any]]) -> dict[str, float | int]:
     total = len(predictions)
 
     if total == 0:
         raise ValueError("Prediction list cannot be empty.")
 
     answered = sum(prediction["decision"] == "ANSWER" for prediction in predictions)
+
     abstained = total - answered
 
     return {
@@ -92,25 +89,20 @@ def summarize_decisions(
     }
 
 
+# loads raw predictions, randomly chooses which ones to answer according to the target coverage, calculates summary statistics, and saves the updated predictions as a JSONL file.
 def run_random_abstention_baseline(
     input_path: str | Path,
     coverage: float,
     seed: int = DEFAULT_SEED,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
 ) -> list[dict[str, Any]]:
-    """
-    Load predictions, apply random abstention, and save the result.
-    """
-
     input_path = Path(input_path)
     output_dir = Path(output_dir)
 
     raw_predictions = load_jsonl(input_path)
 
     predictions = apply_random_abstention(
-        predictions=raw_predictions,
-        coverage=coverage,
-        seed=seed,
+        predictions=raw_predictions, coverage=coverage, seed=seed
     )
 
     summary = summarize_decisions(predictions)
@@ -118,6 +110,7 @@ def run_random_abstention_baseline(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     coverage_name = str(coverage).replace(".", "-")
+
     output_path = output_dir / f"random_abstention_{coverage_name}_seed_{seed}.jsonl"
 
     save_jsonl(predictions, output_path)
@@ -133,36 +126,19 @@ def run_random_abstention_baseline(
     return predictions
 
 
+# reads the random-abstention settings from the terminal.
 def parse_arguments() -> argparse.Namespace:
-    """
-    Parse command-line arguments.
-    """
-
     parser = argparse.ArgumentParser(
         description="Apply random abstention to raw QA predictions."
     )
 
-    parser.add_argument(
-        "--input",
-        default=str(DEFAULT_INPUT_PATH),
-    )
+    parser.add_argument("--input", default=str(DEFAULT_INPUT_PATH))
 
-    parser.add_argument(
-        "--coverage",
-        type=float,
-        default=0.50,
-    )
+    parser.add_argument("--coverage", type=float, default=0.50)
 
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_SEED,
-    )
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
 
-    parser.add_argument(
-        "--output-dir",
-        default=str(DEFAULT_OUTPUT_DIR),
-    )
+    parser.add_argument("--output_dir", default=str(DEFAULT_OUTPUT_DIR))
 
     return parser.parse_args()
 
