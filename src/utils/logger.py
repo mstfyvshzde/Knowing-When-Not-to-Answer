@@ -1,26 +1,27 @@
 """
 To create one logger that shows program messages in the terminal and, optionally, saves the same messages in a log file.
 """
-import logging # Logging records what the program is doing, including progress, warnings, and errors. It helps us debug experiments and keep a history of what happened.
-from pathlib import Path #  # Create and manage file paths safely across operating systems.
+
+import logging  # Logging records what the program is doing, including progress, warnings, and errors. It helps us debug experiments and keep a history of what happened.
+from pathlib import (
+    Path,
+)  #  # Create and manage file paths safely across operating systems.
 
 
 # To create one logger that shows program messages in the terminal and, optionally, saves the same messages in a log file.
 def setup_logger(
-    name: str = 'research', # Gives the logger an identity, such as "research" or "training".
-    log_file: str | Path | None = None, # Sets the file path where logs should be saved; None means terminal only.
-    level: str = 'INFO' # Sets the minimum importance level to record, such as "INFO", "WARNING", or "ERROR". (INFO -> Everything is working normally. (WARNING -> Something might become a problem. (ERROR -> Something went wrong.)))
+    name: str = "research",  # Gives the logger an identity, such as "research" or "training".
+    log_file: (
+        str | Path | None
+    ) = None,  # Sets the file path where logs should be saved; None means terminal only.
+    level: str = "INFO",  # Sets the minimum importance level to record, such as "INFO", "WARNING", or "ERROR". (INFO -> Everything is working normally. (WARNING -> Something might become a problem. (ERROR -> Something went wrong.)))
 ) -> logging.Logger:
     # It creates or retrieves a logger with the given name. That logger is the object you later use with logger.info(), logger.warning(), and logger.error().
     logger = logging.getLogger(name)
 
     # It converts the text level, such as "info", into logging’s numeric constant, such as logging.INFO.
     # Because the logging system uses numeric levels internally, not plain text like "INFO". This line translates the user’s string into the value that logger.setLevel() understands.
-    numeric_level = getattr(
-        logging,
-        level.upper(),
-        None
-    )
+    numeric_level = getattr(logging, level.upper(), None)
 
     if not isinstance(numeric_level, int):
         raise TypeError(f"Invalid logging level: {level}")
@@ -55,23 +56,15 @@ def setup_logger(
     if log_file is not None:
         log_path = Path(log_file)
 
-        log_path.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = logging.FileHandler(
-            log_path,
-            encoding='utf-8'
-        )
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
 
         file_handler.setFormatter(formatter)
 
         logger.addHandler(file_handler)
 
-
     return logger
-
 
 
 if __name__ == "__main__":

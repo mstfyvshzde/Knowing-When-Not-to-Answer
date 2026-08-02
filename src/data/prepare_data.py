@@ -6,8 +6,10 @@ It adds answerability labels, splits the validation data into balanced calibrati
 # shutil is used for high-level file and folder operations, such as copying, moving, or deleting them.
 import shutil
 
-# Create and manage file paths safely across operating systems.
+# is used to create and manage file paths safely.
 from pathlib import Path
+
+# Any is a flexible type hint that allows a variable or dictionary value to contain any Python data type.
 from typing import Any
 
 import numpy as np

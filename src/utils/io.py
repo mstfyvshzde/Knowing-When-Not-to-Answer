@@ -10,87 +10,70 @@ In simple terms, it helps the project:
 So instead of rewriting file-handling code in every part of the project, other files can simply import these helper functions.
 """
 
+# Read and write CSV files.
+import csv
 
-import csv # Read and write CSV files.
-import json # Convert Python objects to and from JSON.
-from pathlib import Path # Create and manage file paths safely across operating systems.
-from typing import Any # Allow a function to accept values of any data type.
+# Convert Python objects to and from JSON.
+import json
+
+# Create and manage file paths safely across operating systems.
+from pathlib import Path
+
+# Allow a function to accept values of any data type.
+from typing import Any
 
 
 # Write a utility function that guarantees the parent directory exists before saving a file.
-def ensure_parent_directory(
-    path: str | Path
-) -> Path:
+def ensure_parent_directory(path: str | Path) -> Path:
     # Converts a string path into a Path object with useful file methods.
     file_path = Path(path)
     main_directory = file_path.parent
 
-    main_directory.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    main_directory.mkdir(parents=True, exist_ok=True)
 
     return file_path
 
 
 # Save a Python object as a JSON file.
-def save_json(
-    data: str | Any,
-    path: str | Path,
-    indent: int = 4
-) -> None:
+def save_json(data: str | Any, path: str | Path, indent: int = 4) -> None:
     file_path = ensure_parent_directory(path)
 
     # Opens the file safely and automatically closes it afterwards.
-    with file_path.open(
-        'w',
-        encoding='utf-8'
-    ) as file:
+    with file_path.open("w", encoding="utf-8") as file:
         # Writes a Python object into a JSON file.
         json.dump(
             data,
             file,
-            indent=indent, # Controls the number of spaces used for indentation, making JSON
-            ensure_ascii=False # Preserves Unicode characters (e.g., Ş, ə, ğ) instead of converting them to escape sequences.
+            # Controls the number of spaces used for indentation, making JSON
+            indent=indent,
+            # Preserves Unicode characters (e.g., Ş, ə, ğ) instead of converting them to escape sequences.
+            ensure_ascii=False,
         )
 
 
 # Load data from a JSON file and convert it into a Python object.
-def load_json(
-    path: str | Path
-) -> object:
+def load_json(path: str | Path) -> object:
     file_path = Path(path)
 
     if not file_path.exists():
-        raise FileNotFoundError(f'JSON file not found: {file_path}')
+        raise FileNotFoundError(f"JSON file not found: {file_path}")
 
-    with file_path.open(
-        'r',
-        encoding='utf-8'
-    ) as file:
+    with file_path.open("r", encoding="utf-8") as file:
         # Reads JSON content from an opened file and converts it into a Python object.
-        data = json.load(
-            file
-        )
+        data = json.load(file)
 
     return data
 
 
 # Save multiple dictionaries in JSON Lines format.
-def save_jsonl(
-    records: list[dict[str, Any]],
-    path: str | Path
-) -> None:
+def save_jsonl(records: list[dict[str, Any]], path: str | Path) -> None:
     file_path = ensure_parent_directory(path)
 
-    with file_path.open(
-        "w",
-        encoding="utf-8"
-    ) as file:
+    with file_path.open("w", encoding="utf-8") as file:
         for record in records:
-            json_line = json.dumps(record) # converts a Python dictionary into a JSON string.
+            # converts a Python dictionary into a JSON string.
+            json_line = json.dumps(record)
             file.write(json_line + "\n")
-
 
 
 # This function reads a JSONL file and returns all JSON objects as Python dictionaries.
@@ -100,16 +83,11 @@ def load_jsonl(
     input_path = Path(path)
 
     if not input_path.exists():
-        raise FileNotFoundError(
-            f"Input file does not exist: {input_path}"
-        )
+        raise FileNotFoundError(f"Input file does not exist: {input_path}")
 
     records: list[dict[str, Any]] = []
 
-    with input_path.open(
-        "r", 
-        encoding="utf-8"
-    ) as input_file:
+    with input_path.open("r", encoding="utf-8") as input_file:
         for line_number, line in enumerate(input_file, start=1):
             stripped_line = line.strip()
 
@@ -126,16 +104,12 @@ def load_jsonl(
                 ) from error
 
             if not isinstance(record, dict):
-                raise ValueError(
-                    f"Line {line_number} must contain a JSON object."
-                )
+                raise ValueError(f"Line {line_number} must contain a JSON object.")
 
             records.append(record)
 
     if not records:
-        raise ValueError(
-            f"No records were found in {input_path}"
-        )
+        raise ValueError(f"No records were found in {input_path}")
 
     return records
 
@@ -164,8 +138,11 @@ def save_csv(
             field_names=field_names,
         )
 
-        writer.writeheader() # Writes column labels, not actual data.
-        writer.writerows(rows) # Writes all dictionaries as data rows.
+        # Writes column labels, not actual data.
+        writer.writeheader()
+
+        # Writes all dictionaries as data rows.
+        writer.writerows(rows)
 
 
 # It tests whether fnctions work

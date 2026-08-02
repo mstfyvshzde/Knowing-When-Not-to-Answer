@@ -2,29 +2,28 @@
 To load YAML configuration files, validate them, and merge several configuration dictionaries into one final configuration.
 """
 
-from pathlib import Path # Create and manage file paths safely across operating systems.
-from typing import Any # Allow a function to accept values of any data type.
+# Create and manage file paths safely across operating systems.
+from pathlib import Path
 
-import yaml # YAML is a human-readable file format used to store configuration data.
+# Allow a function to accept values of any data type.
+from typing import Any
+
+# YAML is a human-readable file format used to store configuration data.
+import yaml
 
 
 # To safely read one YAML configuration file and return its contents as a Python dictionary.
-def load_yaml(
-    path: str | Path
-) -> dict[str, Any]:
+def load_yaml(path: str | Path) -> dict[str, Any]:
     config_path = Path(path)
-    
+
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
     # Accept only YAML file extensions.
-    if config_path.suffix not in {".yaml", '.yml'}:
+    if config_path.suffix not in {".yaml", ".yml"}:
         raise ValueError(f"Expected a YAML file, received: {config_path}")
 
-    with config_path.open(
-        'r',
-        encoding='utf-8'
-    ) as file:
+    with config_path.open("r", encoding="utf-8") as file:
         # reads YAML content and converts it into a Python object, usually a dictionary.
         config = yaml.safe_load(file)
 
@@ -32,31 +31,18 @@ def load_yaml(
             return {}
 
         if not isinstance(config, dict):
-            raise TypeError(
-                f'Configuration must contain a dictionary: {config_path}'
-            )
+            raise TypeError(f"Configuration must contain a dictionary: {config_path}")
 
         return config
 
 
-
 # To combine two dictionaries recursively, while letting values from override replace matching values in base.
-def deep_merge(
-    base: dict[str, Any],
-    override: dict[str, Any]
-) -> dict[str, Any]:
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     merged = base.copy()
 
     for key, value in override.items():
-        if (
-            key in merged 
-            and isinstance(merged[key], dict) 
-            and isinstance(value, dict)
-        ):
-            merged[key] = deep_merge(
-                merged[key],
-                value
-            )
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = deep_merge(merged[key], value)
 
         else:
             merged[key] = value
@@ -64,30 +50,20 @@ def deep_merge(
     return merged
 
 
-
 # Loads multiple YAML configuration files and merges them into one Python dictionary.
-def load_config(
-    config_paths: list[str | Path]
-) -> dict[str, Any]:
-    
+def load_config(config_paths: list[str | Path]) -> dict[str, Any]:
+
     if not config_paths:
-        raise ValueError(
-            'At least one configuration file is required.'
-        )
+        raise ValueError("At least one configuration file is required.")
 
     combined_config: dict[str, Any] = {}
 
     for config_path in config_paths:
         current_config = load_yaml(config_path)
 
-        combined_config = deep_merge(
-            combined_config,
-            current_config
-        )
+        combined_config = deep_merge(combined_config, current_config)
 
     return combined_config
-
-
 
 
 if __name__ == "__main__":
