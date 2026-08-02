@@ -1,84 +1,49 @@
 """
-Confidence-based abstention baseline.
-
-Bu dosyanın görevi:
-1. Raw baseline prediction'larını okumak.
-2. Her prediction'ın confidence score'una bakmak.
-3. Confidence threshold üstündeyse ANSWER kararı vermek.
-4. Threshold altındaysa ABSTAIN etmek.
-5. Yeni kararları ayrı bir JSONL dosyasına kaydetmek.
-
-Bu sistem evidence kullanmaz.
-Yalnızca model confidence score'una güvenir.
+This file applies a confidence-based abstention strategy to raw question-answering predictions.
+It uses a confidence threshold to decide whether to return the model's answer or abstain, then saves the updated predictions and reports summary statistics.
 """
 
+# argparse is used to read command-line arguments when you run the script from the terminal.
 import argparse
+
+# is used to create and manage file paths safely.
 from pathlib import Path
+
+# Any is a flexible type hint that allows a variable or dictionary value to contain any Python data type.
 from typing import Any
 
 from src.utils.io import load_jsonl, save_jsonl
 
-# Raw baseline tarafından oluşturulan prediction dosyası.
 DEFAULT_INPUT_PATH = Path("outputs/predictions/raw_baseline_calibration.jsonl")
 
-# Confidence baseline sonuçlarının kaydedileceği klasör.
 OUTPUT_DIR = Path("outputs/predictions")
 
 
+# decide whether to answer or abstain based on the model's confidence score.
+# If the confidence is above the threshold, it keeps the predicted answer; otherwise, it replaces it with "I do not know" and marks the decision as ABSTAIN.
 def apply_confidence_threshold(
     predictions: list[dict[str, Any]], threshold: float
 ) -> list[dict[str, Any]]:
-    """
-    Confidence threshold kullanarak ANSWER veya ABSTAIN kararı verir.
 
-    Args:
-        predictions:
-            Raw baseline prediction kayıtları.
-
-        threshold:
-            Cevap verebilmek için gereken minimum confidence.
-
-            Örnek:
-                confidence = 0.82
-                threshold = 0.60
-                -> ANSWER
-
-                confidence = 0.35
-                threshold = 0.60
-                -> ABSTAIN
-
-    Returns:
-        Yeni kararlar eklenmiş prediction listesi.
-    """
-
-    # Confidence değeri 0 ile 1 arasında olmalıdır.
+    # Threshold is the minimum confidence score the model must have to return an answer instead of abstaining.
     if not 0.0 <= threshold <= 1.0:
         raise ValueError("Threshold must be between 0 and 1.")
 
     updated_predictions: list[dict[str, Any]] = []
 
     for prediction in predictions:
-        # Raw modelin ürettiği confidence değerini alıyoruz.
         confidence = float(prediction["confidence"])
 
-        # -----------------------------------------------
-        # CORE AI/ML KARAR MANTIĞI
-        # -----------------------------------------------
-
-        # Confidence yeterince yüksekse cevap ver.
-        # Değilse cevap vermekten kaçın.
         if confidence >= threshold:
-            decision = "ANSWER"
+            decision = "ANSwER"
             final_answer = prediction["prediction_text"]
 
         else:
             decision = "ABSTAIN"
             final_answer = "I do not know"
 
-        # Orijinal prediction'ı değiştirmemek için kopyalıyoruz.
         updated_prediction = prediction.copy()
 
-        # Yeni sistemin kararlarını kaydediyoruz.
         updated_prediction.update(
             {
                 "final_answer": final_answer,
@@ -93,14 +58,8 @@ def apply_confidence_threshold(
     return updated_predictions
 
 
+# calculates overall statistics about the model's decisions, such as how many questions were answered, abstained, and the corresponding rates.
 def summarize_decisions(predictions: list[dict[str, Any]]) -> dict[str, float | int]:
-    """
-    Sistemin kaç soruya cevap verdiğini özetler.
-
-    Bu henüz tam evaluation değildir.
-    Yalnızca hızlı kontrol içindir.
-    """
-
     total = len(predictions)
 
     if total == 0:
@@ -114,46 +73,32 @@ def summarize_decisions(predictions: list[dict[str, Any]]) -> dict[str, float | 
         "total_examples": total,
         "answered_examples": answered,
         "abstained-examples": abstained,
-        # Coverage:
-        # Sistemin cevap verdiği örneklerin oranı.
         "coverage": answered / total,
-        # Abstention rate:
-        # Sistemin cevap vermediği örneklerin oranı.
         "abstention_rate": abstained / total,
     }
 
 
+# applies a confidence threshold to raw predictions, saves the updated predictions, prints a summary, and returns the final results.
 def run_confidence_baseline(
     input_path: str | Path, threshold: float
 ) -> list[dict[str, Any]]:
-    """
-    Confidence baseline'ın ana çalışma fonksiyonu.
-    """
     input_path = Path(input_path)
 
-    # Raw prediction dosyasını oku.
     raw_predictions = load_jsonl(input_path)
 
-    # Confidence threshold kararını uygula.
     predictions = apply_confidence_threshold(
         predictions=raw_predictions, threshold=threshold
     )
 
-    # Hızlı karar özeti oluştur.
     summary = summarize_decisions(predictions)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Threshold'u dosya adına ekliyoruz.
-    # Örnek: 0.60 -> 0_60
     threshold_name = str(threshold).replace(".", "-")
 
     output_path = OUTPUT_DIR / f"confidence_baseline_{threshold_name}.jsonl"
 
-    save_jsonl(
-        predictions,
-        output_path,
-    )
+    save_jsonl(predictions, output_path)
 
     print("\nConfidence baseline completed.")
     print(f"Threshold: {threshold:.2f}")
@@ -165,26 +110,15 @@ def run_confidence_baseline(
     return predictions
 
 
+# eads terminal options for the input predictions file and the confidence threshold.
 def parse_arguments() -> argparse.Namespace:
-    """
-    Terminal seçeneklerini okur.
-    """
-
     parser = argparse.ArgumentParser(
-        description=("Apply confidence-based abstention to raw QA predictions.")
+        description="Apply confidence-based abstention to raw QA predictions."
     )
 
-    parser.add_argument(
-        "--input",
-        type=str,
-        default=str(DEFAULT_INPUT_PATH),
-    )
+    parser.add_argument("--input", type=str, default=str(DEFAULT_INPUT_PATH))
 
-    parser.add_argument(
-        "--threshold",
-        type=float,
-        default=0.50,
-    )
+    parser.add_argument("--threshold", type=float, default=0.50)
 
     return parser.parse_args()
 
