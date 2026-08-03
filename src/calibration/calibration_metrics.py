@@ -1,431 +1,388 @@
-""" """
+""" 
+The main purpose of this file is to evaluate the calibration quality of a question-answering model's confidence scores. It loads model predictions, determines which predictions are correct, computes calibration metrics (such as ECE, MCE, Brier Score, Negative Log-Likelihood, Accuracy, and Confidence Gap), groups predictions into confidence bins, and saves a complete calibration report for analysis.
+"""
 
-# import numpy as np
+import argparse
+import numpy as np
+import re
+import string
+from typing import Any
+from pathlib import Path
 
-# from src.utils.io import load_jsonl, save_json
+from src.utils.io import load_jsonl, save_json
 
 
-# def normalize_answer(text: str) -> str:
-#     """
-#     Prediction ve reference cevapları adil karşılaştırmak için
-#     normalize eder.
+# cleans an answer so fair comparison becomes easier.
+# It converts text to lowercase, removes punctuation and articles like a/an/the, removes extra spaces, and returns the normalized answer.
+def normalize_answer(text: str) -> str:
+    text = text.lower()
 
-#     Örnek:
-#         "The James Watt!" -> "james watt"
-#     """
+    text = ''.join(
+        character for character in text if character not in string.punctuation
+    )
 
-#     # Küçük harfe çevir.
-#     text = text.lower()
+    text = re.sub(r'\b(a | an| the |)\b', ' ', text)
 
-#     # Noktalama işaretlerini kaldır.
-#     text = "".join(
-#         character for character in text if character not in string.punctuation
-#     )
+    return ' '.join(text.split())
 
-#     # İngilizce article'ları kaldır.
-#     text = re.sub(r"\b(a|an|the)\b", " ", text)
 
-#     # Birden fazla boşluğu tek boşluğa indir.
-#     return " ".join(text.split())
+# It determines whether the model's predicted answer is correct (1) or incorrect (0) by comparing the normalized prediction with the normalized reference answers.
+def is_prediction_correct(prediction: dict[str, Any]) -> int:
+    is_answerable = bool(prediction['is_answerable'])
 
+    if not is_answerable:
+        return 0.0
 
-# def is_prediction_correct(prediction: dict[str, Any]) -> int:
-#     """
-#     Prediction'ın doğru olup olmadığını 0 veya 1 olarak döndürür.
+    # normalizes the model's predicted answer.
+    predicted_answer = normalize_answer(prediction.get('prediction_text', ''))
 
-#     Returns:
-#         1 -> doğru
-#         0 -> yanlış
+    # gets all correct reference answers.
+    reference_answer = prediction.get('reference_answers', [])
 
-#     Raw baseline her zaman ANSWER verdiği için:
+    # normalizes every reference answer.
+    normalized_references = [
+        normalize_answer(reference) for reference in reference_answer
+    ]
 
-#     - Unanswerable soruya verilen cevap otomatik olarak yanlıştır.
-#     - Answerable soruda prediction reference cevaplardan
-#       biriyle eşleşiyorsa doğrudur.
-#     """
+    # returns 1 if the prediction matches any reference answer; otherwise returns 0.
+    return int(predicted_answer in normalized_references)
 
-#     is_answerable = bool(prediction["is_answerable"])
 
-#     # Context içinde cevap yoksa raw modelin verdiği
-#     # herhangi bir cevap yanlış kabul edilir.
-#     if not is_answerable:
-#         return 0.0
 
-#     predicted_answer = normalize_answer(prediction.get("prediction_text", ""))
+# checks whether the confidence scores are valid before they are used.
+def validate_confidences(confidences: np.ndarray) -> None:
+    if confidences.size == 0:
+        raise ValueError("Confidence array cannot be empty.")
 
-#     reference_answer = prediction.get("reference_answers", [])
+    if np.any(confidences < 0.0):
+        raise ValueError("Confidence values cannot be below zero.")
 
-#     normalized_references = [
-#         normalize_answer(reference) for reference in reference_answer
-#     ]
+    if np.any(confidences > 1.0):
+        raise ValueError("Confidence values cannot exceed one.")
 
-#     return int(predicted_answer in normalized_references)
 
+# Brier score measures how close the model’s confidence scores are to the real outcomes
+def calculate_brier_score(confidences: np.ndarray, correct_labels: np.ndarray) -> float:
 
-# def validate_confidences(confidences: np.ndarray) -> None:
-#     """
-#     Confidence değerlerinin 0 ile 1 arasında olduğunu kontrol eder.
-#     """
+    return float(np.mean((confidences - correct_labels) ** 2))
 
-#     if confidences.size == 0:
-#         raise ValueError("Confidence array cannot be empty.")
 
-#     if np.any(confidences < 0.0):
-#         raise ValueError("Confidence values cannot be below zero.")
+# Negative Log-Likelihood measures whether the model’s confidence scores are appropriate for the real outcomes.
+# For each prediction:
+# If the prediction is correct (label = 1), NLL expects a confidence close to 1.
+# If the prediction is incorrect (label = 0), NLL expects a confidence close to 0.
+def calculate_negative_log_likelihood(
+    confidences: np.ndarray, correct_labels: np.ndarray, epsilon: float =1e-12
+) -> float:
 
-#     if np.any(confidences > 1.0):
-#         raise ValueError("Confidence values cannot exceed one.")
+    clipped_confidences = np.clip(confidences, epsilon, 1.0 - epsilon)
 
+    # The minus sign is needed because log(x) is negative when 0 < x < 1.
+    # It converts the negative log value into a positive loss value.
+    losses = -(
+        correct_labels * np.log(clipped_confidences)
+        + (1 - correct_labels) * np.log(1.0 - clipped_confidences)
+    )
 
-# def calculate_brier_score(confidences: np.ndarray, labels: np.ndarray) -> float:
-#     """
-#     Brier score confidence ile gerçek label arasındaki
-#     karesel hatayı ölçer.
+    return float(np.mean(losses))
 
-#     Mantık:
 
-#         Brier = Ortalama((confidence - correctness)^2)
 
-#     Örnek:
+# groups predictions into confidence intervals (bins) and measures how well the model's confidence matches its actual accuracy in each interval.
+# Confidence bins group predictions by similar confidence scores.
+# Instead of checking every prediction separately, we divide the confidence range from 0.0 to 1.0 into equal intervals.
+# We need bins because individual confidence scores are too scattered to judge calibration clearly.
+# By grouping similar confidence values, we can compare average confidence vs actual accuracy in each range and see where the model is overconfident or underconfident.
+# Example:
+# number_of_bins = 10
 
-#         confidence = 0.90
-#         correctness = 1
-#         hata küçük
+# Bin 0 -> 0.0 to 0.1
+# Bin 9 -> 0.9 to 1.0
 
-#         confidence = 0.90
-#         correctness = 0
-#         hata büyük
-
-#     Düşük değer daha iyidir.
-#     """
-
-#     return float(np.mean((confidences - labels) ** 2))
-
-
-# def calculate_negative_log_likelihood(
-#     confidences: np.ndarray, labels: np.ndarray, epsilon: float = 1e-12
-# ) -> float:
-#     """
-#     Binary Negative Log-Likelihood hesaplar.
-
-#     NLL özellikle yanlış fakat yüksek confidence verilen
-#     tahminleri güçlü biçimde cezalandırır.
-
-#     Confidence tam 0 veya 1 olduğunda log(0) oluşmaması için
-#     değerleri epsilon ile sınırlandırıyoruz.
-
-#     Düşük değer daha iyidir.
-#     """
-
-#     clipped_confidences = np.clip(confidences, epsilon, 1.0 - epsilon)
-
-#     # losses, her tahmin için ayrı ayrı hesaplanan hata değerlerini tutar.
-#     losses = -(
-#         labels * np.log(clipped_confidences)
-#         + (1 - labels) * np.log(1.0 - clipped_confidences)
-#     )
-
-#     return float(np.mean(losses))
-
-
-# # Kalibrasyon, modelin güven skorlarının gerçek doğrulukla ne kadar uyuştuğunu gösterir. Fark küçükse model iyi kalibre edilmiştir.
-# # Bu fonksiyon, modelin güven skorlarını belirli aralıklara, yani binlere ayırır. Her bin içinde bulunan tahminlerin ortalama güven skoru ve gerçek doğruluk oranı ayrı ayrı hesaplanır. Daha sonra bu iki değer arasındaki fark bulunarak modelin ne kadar iyi kalibre edildiği ölçülür.
-# # Örneğin 10 bin kullanıldığında güven skorları 0.0–0.1, 0.1–0.2, …, 0.9–1.0 şeklinde ayrılır. Modelin 0.7–0.8 bininde 20 tahmin varsa, bu 20 tahminin güven skorlarının ortalaması hesaplanır. Ortalama güven %75 ve gerçek doğruluk %65 ise kalibrasyon farkı %10 olur. Bu da modelin bu binde kendine fazla güvendiğini gösterir.
-
-
-# def calculate_calibration_bins(
-#     confidences: np.ndarray, labels: np.ndarray, number_of_bins: int = 10
-# ) -> list[dict[str, Any]]:
-#     """
-#     Confidence değerlerini aralıklara ayırır.
-
-#     Örnek olarak 10 bin kullanılırsa:
-
-#         Bin 1: 0.0–0.1
-#         Bin 2: 0.1–0.2
-#         ...
-#         Bin 10: 0.9–1.0
-
-#     Her bin için ölçülenler:
-
-#     - kaç prediction var?
-#     - ortalama confidence ne?
-#     - gerçek accuracy ne?
-#     - aralarındaki fark ne?
-#     """
-
-#     if number_of_bins <= 0:
-#         raise ValueError("number_of_bins must be greater than zero.")
-
-#     validate_confidences(confidences)
-
-#     # 0 ile 1 arasında eşit aralıklı sınırlar oluştur.
-#     bin_edges = np.linspace(0.0, 1.0, number_of_bins + 1)
-
-#     calibration_bins: list[dict[str, Any]] = []
-
-#     for bin_index in range(number_of_bins):
-#         lower_bound = float(bin_edges[bin_index])
-
-#         upper_bound = float(bin_edges[bin_index + 1])
-
-#         # Son bin 1.0 confidence değerini de içermelidir.
-#         if bin_index == number_of_bins - 1:
-#             in_bin = (confidences >= lower_bound) & (confidences <= upper_bound)
-
-#         else:
-#             in_bin = (confidences >= lower_bound) & (confidences < upper_bound)
-
-#         count = int(np.sum(in_bin))
-
-#         # Bu aralıkta prediction yoksa boş bin kaydediyoruz.
-#         if count == 0:
-#             calibration_bins.append(
-#                 {
-#                     "bin_index": bin_index,
-#                     "lower_bound": lower_bound,
-#                     "upper_bound": upper_bound,
-#                     "count": 0,
-#                     "mean_confidence": None,
-#                     "accuracy": None,
-#                     "calibration_gap": None,
-#                 }
-#             )
-
-#             continue
-
-#         mean_confidence = float(np.mean(confidences[in_bin]))
-
-#         accuracy = float(np.mean(labels[in_bin]))
-
-#         calibration_gap = abs(mean_confidence - accuracy)
-
-#         calibration_bins.append(
-#             {
-#                 "bin_index": bin_index,
-#                 "lower_bound": lower_bound,
-#                 "upper_bound": upper_bound,
-#                 "count": count,
-#                 "mean_confidence": mean_confidence,
-#                 "accuracy": accuracy,
-#                 "calibration_gap": calibration_gap,
-#             }
-#         )
-
-#     return calibration_bins
-
-
-# # Bu fonksiyon, tüm binlerdeki kalibrasyon farklarını örnek sayılarına göre ağırlıklandırarak tek bir ECE değeri hesaplar. ECE ne kadar düşükse model o kadar iyi kalibre edilmiştir.
-# # Her binin gap değeri, o bindeki tahminlerin toplam tahminlere oranıyla çarpılır ve hepsi toplanır.
-# # Böylece çok örnek bulunan binler ECE sonucunu daha fazla etkiler. Sonuç küçükse modelin güveni ile doğruluğu birbirine yakındır.
-# def calculate_ece(calibration_bins: list[dict[str, Any]], total_examples: int) -> float:
-#     """
-#     Expected Calibration Error hesaplar.
-
-#     Her confidence binindeki calibration farkı,
-#     o bindeki örnek sayısıyla ağırlıklandırılır.
-
-#     Düşük ECE daha iyi calibration anlamına gelir.
-#     """
-
-#     if total_examples <= 0:
-#         raise ValueError("total_examples must be greater than zero.")
-
-#     ece = 0.0
-
-#     for calibration_bin in calibration_bins:
-#         count = calibration_bin["count"]
-#         gap = calibration_bin[
-#             "calibration_gap"
-#         ]  # gap, bir bindeki ortalama güven skoru ile gerçek doğruluk arasındaki farktır.
-
-#         if count == 0 or gap is None:
-#             continue
-
-#         bin_weight = count / total_examples
-
-#         ece += bin_weight * gap
-
-#     return float(ece)
-
-
-# # Bu fonksiyon, tüm binler arasındaki en büyük kalibrasyon farkını bulur. Yani modelin en kötü kalibre olduğu güven aralığını gösterir.
-# # MCE, modelin hangi binde en fazla hata yaptığını görmek için kullanılır. Değer ne kadar küçükse o kadar iyidir.
-# def calculate_mce(calibration_bins: list[dict[str, Any]]) -> float:
-#     """
-#     Maximum Calibration Error hesaplar.
-
-#     Confidence binleri arasındaki en büyük
-#     confidence-accuracy farkını döndürür.
-#     """
-
-#     gaps = [
-#         calibration_bin["calibration_gap"]
-#         for calibration_bin in calibration_bins
-#         if calibration_bin["calibration_gap"] is not None
-#     ]
-
-#     if not gaps:
-#         return 0.0
-
-#     return float(max(gaps))
-
-
-# def calculate_calibration_metrics(
-#     predictions: list[dict[str, Any]], number_of_bins: int = 10
-# ) -> dict[str, Any]:
-#     """
-#     Prediction listesinden bütün calibration metriklerini hesaplar.
-#     """
-
-#     if not predictions:
-#         raise ValueError("Prediction list cannot be empty.")
-
-#     # Calibration için gerçek confidence skorları gerekir.
-#     if "confidence" not in predictions[0]:
-#         raise ValueError(
-#             "True confidence scores are not available yet. "
-#             "Run confidence_estimator.py first."
-#         )
-
-#     # Raw confidence değerlerini NumPy array'e dönüştür.
-#     confidences = np.asarray(
-#         [float(prediction["confidence"]) for prediction in predictions],
-#         dtype=np.float64,
-#     )
-
-#     # Her prediction için gerçek correctness label'ı oluştur.
-#     #
-#     # 1 -> doğru
-#     # 0 -> yanlış
-#     labels = np.asarray(
-#         [is_prediction_correct(prediction) for prediction in predictions],
-#         dtype=np.float64,
-#     )
-
-#     validate_confidences(confidences)
-
-#     calibration_bins = calculate_calibration_bins(
-#         confidences=confidences, labels=labels, number_of_bins=number_of_bins
-#     )
-
-#     ece = calculate_ece(
-#         calibration_bins=calibration_bins, total_examples=len(predictions)
-#     )
-
-#     mce = calculate_mce(calibration_bins)
-
-#     brier_score = calculate_brier_score(confidences=confidences, labels=labels)
-
-#     negative_log_likelihood = calculate_negative_log_likelihood(
-#         confidences=confidences, labels=labels
-#     )
-
-#     accuracy = float(np.mean(labels))
-
-#     mean_confidence = float(np.mean(confidences))
-
-#     return {
-#         "system": predictions[0].get("system", "unknown"),
-#         "total_examples": len(predictions),
-#         "correct_examples": int(np.sum(labels)),
-#         "accuracy": accuracy,
-#         "mean_confidence": mean_confidence,
-#         # Confidence ile doğruluk arasındaki genel fark.
-#         "confidence_accuracy_gap": abs(mean_confidence - accuracy),
-#         "expected_calibration_error": ece,
-#         "maximum_calibration_error": mce,
-#         "brier_score": brier_score,
-#         "negative_log_likelihood": (negative_log_likelihood),
-#         "number_of_bins": number_of_bins,
-#         "calibration_bins": calibration_bins,
+# Each bin stores predictions whose confidence falls inside that range.
+# Example predictions in the 0.9 to 1.0 bin:
+
+# Confidence   Correct
+# 0.92         True
+# 0.95         False
+# 0.98         True
+# 0.94         True
+
+# Mean confidence:
+# (0.92 + 0.95 + 0.98 + 0.94) / 4 = 0.9475
+
+# Accuracy:
+# 3 correct predictions / 4 predictions = 0.75
+
+# Calibration gap:
+# abs(0.9475 - 0.75) = 0.1975
+#
+# This means the model is about 95% confident, but it is actually correct only 75% of the time.
+def calculate_calibration_bins(
+    confidences: np.ndarray, correct_labels: np.ndarray, number_of_bins: int = 10
+) -> list[dict[str, Any]]:
+    if number_of_bins <= 0:
+        raise ValueError("number_of_bins must be greater than zero.")
+
+    validate_confidences(confidences)
+
+    # creates equally spaced boundary values between 0 and 1.
+    # bin_edges = [0.0, 0.1, 0.2, ..., 0.9, 1.0]
+    bin_edges = np.linspace(0.0, 1.0, number_of_bins + 1)
+
+    # creates an empty list that will store the summary of each confidence bin.
+    # calibration_bins = [
+#     {
+#         "bin_index": 0,
+#         "lower_bound": 0.0,
+#         "upper_bound": 0.1,
+#     },
+#     {
+#         "bin_index": 9,
+#         "lower_bound": 0.9,
+#         "upper_bound": 1.0,
 #     }
+#   ]
+    calibration_bins: list[dict[str, Any]] = []
+
+    for bin_index in range(number_of_bins):
+        lower_bound = float(bin_edges[bin_index])
+        upper_bound = float(bin_edges[bin_index + 1])
+
+        # For normal bins, the lower edge is included and the upper edge is excluded:
+        # 0.2 <= confidence < 0.3
+        if bin_index == number_of_bins - 1:
+            in_bin = (confidences >= lower_bound) & (confidences <= upper_bound)
+
+        # But the final bin includes both edges:
+        # 0.9 <= confidence <= 1.0
+        # This is necessary so a confidence of exactly 1.0 is not left outside all bins.
+        else: 
+            # in_bin is a Boolean array that shows which confidence scores belong to the current bin.
+            # Example:
+            # confidences = [0.15, 0.25, 0.28, 0.92]
+            # For the 0.2–0.3 bin:
+            # in_bin = [False, True, True, False]
+            # So it acts like a mask: only the True positions are selected.
+            in_bin = (confidences >= lower_bound) & (confidences < upper_bound)
+
+        count = int(np.sum(in_bin))
+
+        if count == 0:
+            calibration_bins.append(
+                {
+                    "bin_index": bin_index,
+                    "lower_bound": lower_bound,
+                    "upper_bound": upper_bound,
+                    "count": 0,
+                    "mean_confidence": None,
+                    "accuracy": None,
+                    "calibration_gap": None,
+                }
+            )
+
+            continue
+
+        mean_confidence = float(np.mean(confidences[in_bin]))
+        accuracy = float(np.mean(correct_labels[in_bin]))
+        # Example:
+        # confidences[in_bin] = [0.92, 0.95, 0.98, 0.94]
+        # correct_labels[in_bin] = [1, 0, 1, 1]
+
+        # measures the difference between the bin’s average confidence and its real accuracy.
+        # A smaller gap means better calibration; 0 means confidence exactly matches accuracy.
+        calibration_gap = abs(mean_confidence - accuracy)
+
+        calibration_bins.append(
+            {
+                "bin_index": bin_index,
+                "lower_bound": lower_bound,
+                "upper_bound": upper_bound,
+                "count": count,
+                "mean_confidence": mean_confidence,
+                "accuracy": accuracy,
+                "calibration_gap": calibration_gap,
+            }
+        )
+
+    return calibration_bins
 
 
-# # Examples: Değerlendirilen toplam örnek sayısıdır. Sonuçların kaç veri üzerinden hesaplandığını görmek için vardır.
-# # Accuracy: Doğru tahmin oranıdır. Modelin genel başarısını ölçmek için kullanılır.
-# # Mean confidence: Modelin ortalama güven seviyesidir. Modelin kendine ne kadar güvendiğini görmek için vardır.
-# # ECE: Güven ile doğruluk arasındaki genel farkı ölçer. Modelin iyi kalibre edilip edilmediğini anlamak için kullanılır.
-# # MCE: En büyük kalibrasyon hatasını gösterir. Modelin en kötü olduğu güven aralığını bulmak için vardır.
-# # Brier score: Tahmin olasılıkları ile gerçek sonuç arasındaki farkı ölçer. Olasılık tahminlerinin kalitesini değerlendirmek için kullanılır.
-# # NLL: Gerçek sınıfa düşük olasılık veren tahminleri cezalandırır. Özellikle yanlış ve aşırı güvenli tahminleri görmek için kullanılır.
-# def run_calibration_analysis(
-#     input_path: str | Path,
-#     output_path: str | Path,
-#     number_of_bins: int,
-# ) -> dict[str, Any]:
-#     """
-#     Prediction dosyasını yükler, calibration metriklerini
-#     hesaplar ve JSON olarak kaydeder.
-#     """
 
-#     predictions = load_jsonl(input_path)
+# Expected Calibration Error (ECE) measures the model's overall calibration error across all confidence bins.
+# Instead of looking at one bin, it combines the calibration gaps from all bins into a single score.
+def calculate_ece(calibration_bins: list[dict[str, Any]], total_examples: int) -> float:
+    if total_examples <= 0:
+        raise ValueError("total_examples must be greater than zero.")
 
-#     metrics = calculate_calibration_metrics(
-#         predictions=predictions,
-#         number_of_bins=number_of_bins,
-#     )
+    ece = 0.0
 
-#     save_json(
-#         metrics,
-#         output_path,
-#     )
+    for calibration_bin in calibration_bins:
+        count = calibration_bin['count']
+        gap = calibration_bin["calibration_gap"]
+        if count == 0 or gap is None:
+            continue
 
-#     print("\nCalibration analysis completed.")
+        bin_weight = count / total_examples
 
-#     print(f"Examples: {metrics['total_examples']}")
+        ece += bin_weight * gap
 
-#     print(f"Accuracy: {metrics['accuracy']:.4f}")
-
-#     print(f"Mean confidence: {metrics['mean_confidence']:.4f}")
-
-#     print(f"ECE: {metrics['expected_calibration_error']:.4f}")
-
-#     print(f"MCE: {metrics['maximum_calibration_error']:.4f}")
-
-#     print(f"Brier score: {metrics['brier_score']:.4f}")
-
-#     print(f"NLL: {metrics['negative_log_likelihood']:.4f}")
-
-#     print(f"Saved to: {output_path}")
-
-#     return metrics
+    return float(ece)
 
 
-# def parse_arguments() -> argparse.Namespace:
-#     """
-#     Terminal argümanlarını okur.
-#     """
+# Maximum Calibration Error (MCE) measures the largest calibration gap among all confidence bins.
+# It tells you the worst-calibrated confidence bin.
+def calculate_mce(calibration_bins: list[dict[str,Any]]) -> float:
+    gaps = [
+        calibration_bin['calibration_gap']
+        for calibration_bin in calibration_bins
+        if calibration_bin['calibration_gap'] is not None
+    ]
 
-#     parser = argparse.ArgumentParser(
-#         description=("Measure calibration of raw QA confidence scores.")
-#     )
+    if not gaps:
+        return 0.0
 
-#     parser.add_argument(
-#         "--input",
-#         required=True,
-#         help="Raw prediction JSONL file.",
-#     )
-
-#     parser.add_argument(
-#         "--output",
-#         default=("outputs/tables/raw_confidence_calibration.json"),
-#     )
-
-#     parser.add_argument(
-#         "--bins",
-#         type=int,
-#         default=10,
-#     )
-
-#     return parser.parse_args()
+    return(float(max(gaps)))
 
 
-# if __name__ == "__main__":
-#     args = parse_arguments()
+# calculates all important calibration metrics for a set of predictions and returns them together in one dictionary.
+def calculate_calibration_metrics(
+    predictions: list[dict[str, Any]], number_of_bins: int = 10
+) -> dict[str, Any]:
+    if not predictions:
+        raise ValueError("Prediction list cannot be empty.")
 
-#     run_calibration_analysis(
-#         input_path=args.input,
-#         output_path=args.output,
-#         number_of_bins=args.bins,
-#     )
+    if 'confidence' not in predictions[0]:
+        raise ValueError(
+            "True confidence scores are not available yet. "
+            "Run confidence_estimator.py first."
+        )
+
+    # It returns a NumPy array containing all confidence scores as float64 value
+    confidences = np.asarray(
+        [float(prediction['confidence']) for prediction in predictions],
+        dtype=np.float64
+    )
+
+    # It returns a NumPy array containing 1s and 0s
+    correct_labels = np.asarray(
+        [is_prediction_correct(prediction) for prediction in predictions],
+        dtype=np.float64
+    )
+
+    validate_confidences(confidences)
+
+    # This function returns a list of dictionaries, where each dictionary summarizes one confidence bin.
+    calibration_bins = calculate_calibration_bins(
+        confidences=confidences, correct_labels=correct_labels, number_of_bins=number_of_bins
+    )
+
+    ece = calculate_ece(
+        calibration_bins=calibration_bins, total_examples=len(predictions)
+    )
+
+    mce = calculate_mce(calibration_bins)
+
+    brier_score = calculate_brier_score(confidences=confidences, correct_labels=correct_labels)
+
+    negative_log_likelihood = calculate_negative_log_likelihood(
+        confidences=confidences, correct_labels=correct_labels
+    )
+
+    accuracy = float(np.mean(correct_labels))
+
+    mean_confidence = float(np.mean(confidences))
+
+    return {
+        # predictions[0].get("system", "unknown") gets the "system" value from the first prediction.
+        # Example:
+        # {"system": "confidence_baseline"}
+        "system": predictions[0].get("system", "unknown"),
+        "total_examples": len(predictions),
+        "correct_examples": int(np.sum(correct_labels)),
+        "accuracy": accuracy,
+        "mean_confidence": mean_confidence,
+        "confidence_accuracy_gap": abs(mean_confidence - accuracy),
+        "expected_calibration_error": ece,
+        "maximum_calibration_error": mce,
+        "brier_score": brier_score,
+        "negative_log_likelihood": (negative_log_likelihood),
+        "number_of_bins": number_of_bins,
+        "calibration_bins": calibration_bins,
+    }
+
+
+# runs the complete calibration evaluation pipeline.
+# It loads the prediction file, calculates all calibration metrics (such as Accuracy, ECE, MCE, Brier Score, and NLL), saves the results to a JSON file, prints a summary, and returns the calculated metrics.
+def run_calibration_analysis(
+    input_path: str | Path,
+    output_path: str | Path,
+    number_of_bins: int
+) -> dict[str, Any]:
+    predictions = load_jsonl(input_path)
+
+    metrics = calculate_calibration_metrics(
+        predictions=predictions,
+        number_of_bins=number_of_bins
+    )
+
+    save_json(
+        metrics,
+        output_path
+    )
+
+    print("\nCalibration analysis completed.")
+
+    print(f"Examples: {metrics['total_examples']}")
+
+    print(f"Accuracy: {metrics['accuracy']:.4f}")
+
+    print(f"Mean confidence: {metrics['mean_confidence']:.4f}")
+
+    print(f"ECE: {metrics['expected_calibration_error']:.4f}")
+
+    print(f"MCE: {metrics['maximum_calibration_error']:.4f}")
+
+    print(f"Brier score: {metrics['brier_score']:.4f}")
+
+    print(f"NLL: {metrics['negative_log_likelihood']:.4f}")
+
+    print(f"Saved to: {output_path}")
+
+    return metrics
+
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=("Measure calibration of raw QA confidence scores.")
+    )
+
+    parser.add_argument(
+        '--input',
+        required=True,
+        help='Raw prediction JSONL file'
+    )
+
+    parser.add_argument(
+        '--output',
+        default="outputs/tables/raw_confidence_calibration.json"
+    )
+
+    parser.add_argument(
+        '--bins',
+        type=int,
+        default=10
+    )
+
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
+
+    run_calibration_analysis(
+        input_path=args.input,
+        output_path=args.output,
+        number_of_bins=args.bins,
+    )
