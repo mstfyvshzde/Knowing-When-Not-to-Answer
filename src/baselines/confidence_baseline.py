@@ -35,7 +35,7 @@ def apply_confidence_threshold(
         confidence = float(prediction["confidence"])
 
         if confidence >= threshold:
-            decision = "ANSwER"
+            decision = "ANSWER"
             final_answer = prediction["prediction_text"]
 
         else:
