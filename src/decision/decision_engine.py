@@ -1,27 +1,8 @@
 """
-Final decision engine for selective question answering.
-
-Bu dosyanın görevi:
-
-1. Calibration aşamasından gelen confidence kararını okumak.
-2. Evidence verifier sonucunu okumak.
-3. Bu iki sinyali birleştirerek final karar üretmek.
-
-Final kararlar:
-
-    ANSWER
-        Sistem cevabı doğrudan kullanıcıya gösterir.
-
-    VERIFY
-        Sistem cevabı göstermeden önce ek doğrulama ister.
-
-    ABSTAIN
-        Sistem güvenilir bir cevap veremediğini söyler.
-
-Bu karar motoru deterministic ve açıklanabilirdir.
-Her karar için decision_reason alanı kaydedilir.
+It reads predictions, checks that confidence and evidence information are valid, combines the threshold decision with evidence support, assigns a final ANSWER, VERIFY, or ABSTAIN decision, records the reason, calculates summary metrics, saves the results, and prints the final statistics.
 """
 
+# used to count how many times each item appears in a collection (like a list).
 import argparse
 from collections import Counter
 from pathlib import Path
@@ -34,34 +15,22 @@ DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_evidence.jsonl")
 DEFAULT_OUTPUT_PATH = Path("outputs/predictions/calibration_final_decisions.jsonl")
 
 
-VALID_THRESHOLD_DECISIONS = {
-    "ANSWER",
-    "VERIFY",
-    "ABSTAIN",
-}
+VALID_THRESHOLD_DECISIONS = {"ANSWER", "VERIFY", "ABSTAIN"}
 
-VALID_EVIDENCE_LABELS = {
-    "SUPPORTED",
-    "WEAK",
-    "UNSUPPORTED",
-}
+VALID_EVIDENCE_LABELS = {"SUPPORTED", "WEAK", "UNSUPPORTED"}
 
 
+# extracts a valid threshold decision from a prediction by checking multiple possible field names and returning it in a standardized format.
 def get_threshold_decision(prediction: dict[str, Any]) -> str:
-    """
-    Threshold selection aşamasında üretilen
-    confidence-based kararı bulur.
-
-    Farklı dosya sürümlerinde alan adı değişmiş
-    olabilir. Bu nedenle birkaç olası alan
-    desteklenir.
-    """
-
     possible_fields = (
-        "threshold_decision",  # Eşik değerine göre verilen karar.
-        "confidence_decision",  # Güven skoruna göre verilen karar.
-        "decision",  # Genel/standart karar alanı.
-        "selective_decision",  # Yalnızca yeterince güvenilen durumlarda verilen seçici karar.
+        # Eşik değerine göre verilen karar.
+        "threshold_decision",
+        # Güven skoruna göre verilen karar.
+        "confidence_decision",
+        # Genel/standart karar alanı.
+        "decision",
+        # Yalnızca yeterince güvenilen durumlarda verilen seçici karar.
+        "selective_decision",
     )
 
     for field in possible_fields:
@@ -83,12 +52,8 @@ def get_threshold_decision(prediction: dict[str, Any]) -> str:
     )
 
 
+# retrieves, validates, and standardizes the evidence_support label from a prediction.
 def get_evidence_support(prediction: dict[str, Any]) -> str:
-    """
-    Evidence verifier tarafından üretilen
-    support label'ını okur.
-    """
-
     evidence_support = str(prediction.get("evidence_support", "")).strip().upper()
 
     if evidence_support not in (VALID_EVIDENCE_LABELS):
@@ -101,16 +66,8 @@ def get_evidence_support(prediction: dict[str, Any]) -> str:
     return evidence_support
 
 
+# retrieves the first available confidence score, validates it, and returns it as a float.
 def get_confidence(prediction: dict[str, Any]) -> float:
-    """
-    Prediction kaydından calibrated confidence
-    değerini okur.
-
-    Öncelik calibrated confidence alanındadır.
-    Eski dosya sürümleri için confidence alanı
-    fallback olarak desteklenir.
-    """
-
     possible_fields = (
         "calibrated_confidence",
         "confidence",
@@ -140,80 +97,36 @@ def get_confidence(prediction: dict[str, Any]) -> float:
     raise ValueError("Prediction does not contain calibrated_confidence or confidence.")
 
 
+# merges the threshold decision and the evidence support result to determine the final decision and its explanation.
 def combine_decisions(
     threshold_decision: str, evidence_support: str
 ) -> tuple[str, str]:
-    """
-    Confidence-based karar ile evidence desteğini
-    birleştirerek final karar üretir.
-
-    Yeni strateji:
-
-    1. ANSWER kararları korunur.
-    2. ABSTAIN kararları korunur.
-    3. Evidence verifier yalnızca VERIFY
-       bölgesinde kullanılır.
-    """
-
-    # Model yüksek güvenli ANSWER bölgesindeyse,
-    # lexical evidence verifier bu kararı düşürmez.
     if threshold_decision == "ANSWER":
-        return (
-            "ANSWER",
-            "high_confidence_answer_preserved",
-        )
+        return ("ANSWER", "high_confidence_answer_preserved")
 
-    # Modelin güveni çok düşükse evidence,
-    # cevabı doğrudan yükseltmemelidir.
     if threshold_decision == "ABSTAIN":
-        return (
-            "ABSTAIN",
-            "confidence_below_abstain_threshold",
-        )
+        return ("ABSTAIN", "confidence_below_abstain_threshold")
 
-    # Belirsiz confidence bölgesinde güçlü evidence,
-    # cevabı ANSWER seviyesine yükseltebilir.
     if threshold_decision == "VERIFY" and evidence_support == "SUPPORTED":
-        return (
-            "ANSWER",
-            "medium_confidence_with_supported_evidence",
-        )
+        return ("ANSWER", "medium_confidence_with_supported_evidence")
 
-    # Confidence ve evidence birlikte belirsizse
-    # ek doğrulama gerekir.
     if threshold_decision == "VERIFY" and evidence_support == "WEAK":
-        return (
-            "VERIFY",
-            "medium_confidence_and_weak_evidence",
-        )
+        return ("VERIFY", "medium_confidence_and_weak_evidence")
 
-    # Belirsiz confidence ve desteklenmeyen evidence
-    # birlikteyse cevap verilmez.
     if threshold_decision == "VERIFY" and evidence_support == "UNSUPPORTED":
-        return (
-            "ABSTAIN",
-            "medium_confidence_and_unsupported_evidence",
-        )
+        return ("ABSTAIN", "medim_confidence_and_unsupported_evidence")
 
-    return (
-        "ABSTAIN",
-        "unhandled_decision_combination",
-    )
+    return ("ABSTAIN", "unhandled_decision_combination")
 
 
+# processes a single prediction by combining its confidence-based decision and evidence support into a final decision, then returns the updated prediction.
 def process_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
-    """
-    Tek bir prediction kaydı için final karar üretir.
-    """
-
     threshold_decision = get_threshold_decision(prediction)
-
     evidence_support = get_evidence_support(prediction)
-
     confidence = get_confidence(prediction)
 
-    fnal_decision, decision_reason = combine_decisions(
-        threshold_decision=(threshold_decision), evidence_support=(evidence_support)
+    final_decision, decision_reason = combine_decisions(
+        threshold_decision=threshold_decision, evidence_support=evidence_support
     )
 
     updated_prediction = prediction.copy()
@@ -221,7 +134,7 @@ def process_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
     updated_prediction.update(
         {
             "threshold_decision": (threshold_decision),
-            "final_decision": (fnal_decision),
+            "final_decision": (final_decision),
             "decision_reason": (decision_reason),
             "decision_engine": ("confidence_evidence_rule_based"),
             "decision_confidence": (confidence),
@@ -231,12 +144,8 @@ def process_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
     return updated_prediction
 
 
+# checks that the prediction list is not empty and that every prediction contains the required evidence_support field before further processing.
 def validate_predictions(predictions: list[dict[str, Any]]) -> None:
-    """
-    Input prediction listesinin boş olmadığını ve
-    gerekli evidence alanını içerdiğini kontrol eder.
-    """
-
     if not predictions:
         raise ValueError("Prediction list cannot be empty.")
 
@@ -249,12 +158,8 @@ def validate_predictions(predictions: list[dict[str, Any]]) -> None:
             )
 
 
+# summarizes the final decision distribution and, when correctness labels are available, calculates their accuracies and answer risk.
 def calculate_decision_metrics(predictions: list[dict[str, Any]]) -> dict[str, Any]:
-    """
-    Final karar dağılımını ve mümkünse her karar
-    bölgesindeki doğruluk oranını hesaplar.
-    """
-
     total = len(predictions)
 
     decision_counts = Counter(
@@ -271,15 +176,14 @@ def calculate_decision_metrics(predictions: list[dict[str, Any]]) -> dict[str, A
         "abstain_rate": (decision_counts["ABSTAIN"] / total),
     }
 
-    # Prediction kayıtlarında is_correct alanı
-    # bulunuyorsa karar bölgelerinin doğruluğu da
-    # hesaplanır.
+    # It checks whether every prediction contains the "is_correct" field before calculating accuracy metrics.
     if all("is_correct" in prediction for prediction in predictions):
         for decision in (
             "ANSWER",
             "VERIFY",
             "ABSTAIN",
         ):
+            # it creates a list containing only the predictions whose final_decision matches the current decision type, such as ANSWER, VERIFY, or ABSTAIN.
             decision_predictions = [
                 prediction
                 for prediction in predictions
@@ -288,8 +192,7 @@ def calculate_decision_metrics(predictions: list[dict[str, Any]]) -> dict[str, A
 
             if decision_predictions:
                 correct_count = sum(
-                    bool(prediction["is_correct"])
-                    for prediction in decision_predictions
+                    bool(prediction["is_correct"]) for prediction in predictions
                 )
 
                 accuracy = correct_count / len(decision_predictions)
@@ -301,19 +204,16 @@ def calculate_decision_metrics(predictions: list[dict[str, Any]]) -> dict[str, A
 
         answer_accuracy = metrics.get("answer_accuracy")
 
+        # We use `is not None` instead of `True` because `answer_accuracy`s not a Boolean value.
+        #  It can be either a real number (including 0.0) or `None`, and we only want to skip the calculation when it is `None`.
         if answer_accuracy is not None:
             metrics["answer_risk"] = 1.0 - answer_accuracy
 
     return metrics
 
 
-def print_decision_summary(
-    metrics: dict[str, Any],
-) -> None:
-    """
-    Decision engine sonuçlarını terminale yazdırır.
-    """
-
+# displays a summary of the final decision statistics, including the number of ANSWER, VERIFY, and ABSTAIN predictions, their rates, answer risk, and accuracies.
+def print_decision_summary(metrics: dict[str, Any]) -> None:
     print("\nFinal decision generation completed.")
 
     print(f"Total predictions: {metrics['total']}")
@@ -327,11 +227,7 @@ def print_decision_summary(
     if "answer_risk" in metrics:
         print(f"Final answer risk: {metrics['answer_risk']:.4f}")
 
-    for decision in (
-        "answer",
-        "verify",
-        "abstain",
-    ):
+    for decision in ("answer", "verify", "abstain"):
         metric_name = f"{decision}_accuracy"
 
         accuracy = metrics.get(metric_name)
@@ -340,14 +236,11 @@ def print_decision_summary(
             print(f"{decision.upper()} accuracy: {accuracy:.4f}")
 
 
+# uns the complete final-decision pipeline: it loads predictions, validates them, processes each one into a final ANSWER, VERIFY, or ABSTAIN decision, saves the results, calculates metrics, prints a summary, and returns the final predictions.
 def run_decision_engine(
     input_path: str | Path,
     output_path: str | Path,
 ) -> list[dict[str, Any]]:
-    """
-    Tüm prediction kayıtları için final karar üretir.
-    """
-
     predictions = load_jsonl(input_path)
 
     validate_predictions(predictions)
@@ -387,10 +280,6 @@ def run_decision_engine(
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Terminal argümanlarını okur.
-    """
-
     parser = argparse.ArgumentParser(
         description=(
             "Combine calibrated confidence "
