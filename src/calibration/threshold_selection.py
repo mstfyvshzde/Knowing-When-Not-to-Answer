@@ -1,28 +1,5 @@
 """
-Select ANSWER, VERIFY and ABSTAIN thresholds.
-
-Bu dosyanın görevi:
-1. Calibrated confidence değerlerini okumak.
-2. Her prediction'ın doğru veya yanlış olduğunu belirlemek.
-3. Olası threshold çiftlerini calibration verisinde denemek.
-4. Güvenlik kısıtlarını karşılayan en iyi threshold'ları seçmek.
-5. Threshold sonuçlarını JSON olarak kaydetmek.
-
-Karar sistemi:
-
-    confidence <= abstain_threshold
-        -> ABSTAIN
-
-    abstain_threshold < confidence < answer_threshold
-        -> VERIFY
-
-    confidence >= answer_threshold
-        -> ANSWER
-
-Önemli:
-- Threshold'lar yalnızca calibration split üzerinde seçilir.
-- Test split threshold seçmek için kullanılmaz.
-- Test split yalnızca final evaluation için kullanılır.
+The purpose of this file is to search for the best decision thresholds on the calibration set and use them to assign the final ANSWER, VERIFY, or ABSTAIN decision to every prediction.
 """
 
 import argparse
@@ -46,28 +23,17 @@ DEFAULT_ANNOTATED_OUTPUT_PATH = Path(
 )
 
 
+# validates that the prediction file is suitable for threshold selection and returns the confidence scores and correctness labels as NumPy arrays.
 def validate_predictions(
     predictions: list[dict[str, Any]],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Prediction kayıtlarını kontrol eder.
-
-    Returns:
-        confidences:
-            Calibrated confidence değerleri.
-
-        labels:
-            1 -> prediction doğru
-            0 -> prediction yanlış
-    """
-
     if not predictions:
         raise ValueError("Prediction list cannot be empty.")
 
     missing_confidence = [
-        prediction.get("id", "unknown")
+        prediction.get("it", "unknown")
         for prediction in predictions
-        if "confidence" not in prediction
+        if "confidnce" not in prediction
     ]
 
     if missing_confidence:
@@ -76,7 +42,6 @@ def validate_predictions(
             f"Missing IDs: {missing_confidence[:5]}"
         )
 
-    # Threshold selection calibrated confidence üzerinde yapılmalıdır.
     uncalibrated_examples = [
         prediction.get("id", "unknown")
         for prediction in predictions
@@ -90,7 +55,6 @@ def validate_predictions(
             f"Example IDs: {uncalibrated_examples[:5]}"
         )
 
-    # observed_splits, predictions içindeki hangi veri bölümlerinin kullanıldığını toplar.
     observed_splits = {
         prediction.get("split")
         for prediction in predictions
@@ -115,26 +79,25 @@ def validate_predictions(
     if np.any(confidences < 0.0) or np.any(confidences > 1.0):
         raise ValueError("Confidence values must be between zero and one.")
 
-    labels = np.asarray(
+    correct_labels = np.asarray(
         [is_prediction_correct(prediction) for prediction in predictions],
         dtype=np.int64,
     )
 
-    if len(np.unique(labels)) < 2:
+    if len(np.unique(correct_labels)) < 2:
         raise ValueError(
             "Threshold selection requires both correct and incorrect predictions."
         )
 
-    return confidences, labels
+    return confidences, correct_labels
 
 
+# assigns one of three decisions (ANSWER, ABSTAIN, or VERIFY) based on the model's confidence score and two thresholds.
 def assign_decision(
     confidence: float, abstain_threshold: float, answer_threshold: float
 ) -> str:
-    """
-    Tek bir confidence değerini karara dönüştürür.
-    """
-
+    # Abstain threshold is the maximum confidence at which the system decides not to answer.
+    # Answer threshold is the minimum confidence required for the system to answer directly.
     if abstain_threshold >= answer_threshold:
         raise ValueError("abstain_threshold must be smaller than answer_threshold.")
 
@@ -147,66 +110,44 @@ def assign_decision(
     return "VERIFY"
 
 
+# valuates a single pair of abstain and answer thresholds by assigning decisions (ANSWER, VERIFY, ABSTAIN), computing their performance statistics, and returning all metrics needed to compare threshold pairs.
 def evaluate_threshold_pair(
     confidences: np.ndarray,
-    labels: np.ndarray,
+    correct_labels: np.ndarray,
     abstain_threshold: float,
     answer_threshold: float,
 ) -> dict[str, Any]:
-    """
-    Tek bir threshold çiftinin davranışını ölçer.
-
-    Burada önemli ölçümler:
-
-    answer_risk:
-        Modelin doğrudan cevap verdiği örneklerdeki
-        yanlış cevap oranı.
-
-    abstain_correct_rate:
-        Modelin sustuğu örneklerin ne kadarının aslında
-        doğru tahmin olduğu.
-
-    verify_rate:
-        Ek doğrulama isteyen örnek oranı.
-    """
 
     if abstain_threshold >= answer_threshold:
         raise ValueError("Invalid threshold ordering.")
 
     total_examples = len(confidences)
 
+    # answer_mask -> marks predictions whose confidence is high enough to ANSWER.
+    # abstain_mask -> marks predictions whose confidence is low enough to ABSTAIN.
+    # verify_mask -> marks predictions that are between the two thresholds, so they should be VERIFY.
     answer_mask = confidences >= answer_threshold
-
     abstain_mask = confidences <= abstain_threshold
-
     verify_mask = ~answer_mask & ~abstain_mask
 
     answer_count = int(np.sum(answer_mask))
-
     abstain_count = int(np.sum(abstain_mask))
-
     verify_count = int(np.sum(verify_mask))
 
-    answer_correct = int(np.sum(labels[answer_mask] == 1))
+    answer_correct = int(np.sum(correct_labels[answer_mask] == 1))
+    answer_incorrect = int(np.sum(correct_labels[answer_mask] == 0))
 
-    answer_incorrect = int(np.sum(labels[answer_mask] == 0))
+    abstain_correct = int(np.sum(correct_labels[abstain_mask] == 1))
+    abstain_incorrect = int(np.sum(correct_labels[abstain_mask] == 0))
 
-    abstain_correct = int(np.sum(labels[abstain_mask] == 1))
-
-    abstain_incorrect = int(np.sum(labels[abstain_mask] == 0))
-
-    # Direct answers içindeki doğruluk.
     if answer_count > 0:
         answer_accuracy = answer_correct / answer_count
-
         answer_risk = answer_incorrect / answer_count
 
     else:
         answer_accuracy = None
         answer_risk = None
 
-    # ABSTAIN edilen örneklerin ne kadarı aslında doğru cevaptı?
-    # Bunun düşük olmasını isteriz.
     if abstain_count > 0:
         abstain_correct_rate = abstain_correct / abstain_count
 
@@ -220,15 +161,10 @@ def evaluate_threshold_pair(
         verify_accuracy = None
 
     answer_coverage = answer_count / total_examples
-
     abstain_rate = abstain_count / total_examples
-
     verify_rate = verify_count / total_examples
-
     direct_decision_rate = (answer_count + abstain_count) / total_examples
-
     false_answer_rate = answer_incorrect / total_examples
-
     unnecessary_abstention_rate = abstain_correct / total_examples
 
     return {
@@ -255,124 +191,91 @@ def evaluate_threshold_pair(
     }
 
 
-def create_threshold_candidates(
-    confidences: np.ndarray,
-    grid_size: int,  # grid_size, kaç tane threshold adayı üretileceğini belirler. Bu threshold’lar, modelin tahminini kabul edip etmeyeceğine karar vermek için kullanılır.
-) -> np.ndarray:
-    """
-    Confidence dağılımından threshold adayları üretir.
-
-    Bütün unique confidence değerlerini kullanmak,
-    büyük datasetlerde çok pahalı olabilir.
-
-    Bu nedenle confidence quantile'larından
-    sınırlı sayıda aday üretiriz.
-    """
-
+# generates a unique set of candidate threshold values from the confidence score distribution, allowing the system to efficiently search for the best abstain and answer thresholds.
+def create_threshold_candidates(confidences: np.ndarray, grid_size: int) -> np.ndarray:
+    # controls how many candidate threshold values are generated from the confidence distribution for the threshold search.
+    # grid_size = 5 -> [0.12, 0.30, 0.54, 0.74, 0.95]
     if grid_size < 3:
         raise ValueError("grid_size must be at least 3.")
 
-    # np.linspace(0.0, 1.0, grid_size), 0 ile 1 arasında eşit aralıklı quantile noktaları üretir.
+    # Creates evenly spaced percentile positions between 0 and 1.
+    # grid_size = 5 -> [0.00, 0.25, 0.50, 0.75, 1.00]
     quantiles = np.linspace(0.0, 1.0, grid_size)
 
-    # np.quantile(confidences, quantiles) ise confidence değerlerinin bu yüzdeliklere karşılık gelen skorlarını bulur.
+    # Converts those percentile positions into actual confidence values.
+    # confidences = [0.10, 0.20, 0.40, 0.60, 0.90]
+    # quantiles = [0.00, 0.25, 0.50, 0.75, 1.00]
+    # -> candidates = [0.10, 0.20, 0.40, 0.60, 0.90]
     candidates = np.quantile(confidences, quantiles)
 
-    # Tekrarlanan threshold değerlerini kaldır.
+    # Removes duplicate threshold values.
     candidates = np.unique(candidates)
 
-    # candidates listesinin başına 0.0, sonuna 1.0 ekler ve tekrar eden değerleri siler.
+    # Adds the extreme threshold values (0.0 and 1.0) to the candidate list, then removes duplicates.
     candidates = np.unique(
-        # np.concatenate, birden fazla NumPy dizisini tek bir dizi halinde birleştirir.
         np.concatenate([np.asarray([0.0]), candidates, np.asarray([1.0])])
     )
 
     return candidates
 
 
+# searches through many possible abstain and answer threshold pairs, evaluates each pair, and selects the best one according to the given safety and performance constraints.
 def select_thresholds(
     confidences: np.ndarray,
-    labels: np.ndarray,
+    correct_labels: np.ndarray,
     max_answer_risk: float,
-    max_abstain_corrrect_rate: float,
+    max_abstain_correct_rate: float,
     min_answer_rate: float,
     min_abstain_rate: float,
     grid_size: int,
 ) -> dict[str, Any]:
-    """
-    Calibration verisi üzerinde en iyi threshold çiftini seçer.
+    # We need these 3 variables to balance safety and usefulness:
+    # max_answer_risk limits how many wrong answers are allowed.
+    # max_abstain_correct_rate limits unnecessary refusals.
+    # min_answer_rate prevents the model from avoiding too many questions
 
-    Güvenlik kısıtları:
-
-    1. ANSWER bölgesindeki yanlış oranı,
-       max_answer_risk değerini geçmemeli.
-
-    2. ABSTAIN bölgesindeki doğru tahmin oranı,
-       max_abstain_correct_rate değerini geçmemeli.
-
-    Seçim öncelikleri:
-
-    1. Daha fazla güvenli ANSWER üret.
-    2. Daha az örneği VERIFY'a gönder.
-    3. ANSWER riskini düşür.
-    4. Gereksiz ABSTAIN oranını düşür.
-    """
-
-    if (
-        not 0.0 <= max_answer_risk <= 1.0
-    ):  # max_answer_risk, modelin kabul edilen cevaplarında izin verilen en yüksek hata oranıdır.
+    # max_answer_risk -> the maximum mistake rate allowed when the model answers
+    if not (0.0 <= max_answer_risk <= 1.0):
         raise ValueError("max_answer_risk must be between 0 and 1.")
 
-    if not (
-        0.0
-        <= max_abstain_corrrect_rate  # max_abstain_correct_rate, modelin cevap vermediği örnekler içinde aslında doğru tahmin ettiği örneklerin izin verilen en yüksek oranıdır.
-        <= 1.0
-    ):
+    # ax_abstain_correct_rate -> maximum allowed rate of unnecessary abstentions.
+    if not (0.0 <= max_abstain_correct_rate <= 1.0):
         raise ValueError("max_abstain_correct_rate must be between 0 and 1.")
 
-    if (
-        not 0.0 <= min_answer_rate <= 1.0
-    ):  # min_answer_rate, modelin tüm örneklerin en az ne kadarına doğrudan ANSWER vermesi gerektiğini belirtir.
+    # the minimum proportion of examples that the model must answer directly
+    if not (0.0 <= min_answer_rate <= 1.0):
         raise ValueError("min_answer_rate must be between 0 and 1.")
 
     total_examples = len(confidences)
 
-    # Bu kod, modelin en az kaç örneğe ANSWER vermesi gerektiğini hesaplar.
+    # the minimum number of examples the model must answer.
     minimum_answer_count = max(
         1,
-        math.ceil(
-            total_examples
-            * min_answer_rate  # math.ceil(...), çıkan sayıyı bir üst tam sayıya yuvarlar.
-        ),
+        # math.ceil() rounds a decimal up to the next whole number.
+        math.ceil(total_examples * min_answer_rate),
     )
 
+    # minimum number of examples on which the model must choose ABSTAIN.
     minimum_abstain_count = max(1, math.ceil(total_examples * min_abstain_rate))
 
     candidates = create_threshold_candidates(
         confidences=confidences, grid_size=grid_size
     )
 
-    # Uygun sonuçları saklamak için oluşturulmuş boş bir listedir. İçine sözlükler eklenir.
+    # threshold pairs that meet all requirements.
     feasible_results: list[dict[str, Any]] = []
 
-    # fallback_results, uygun sonuç bulunamazsa kullanılacak yedek sonuçları saklayan boş listedir.
-    fallback_results: list[dict[str, Any]] = []
+    # threshold pairs that don't meet the requirements but are saved as backups.
+    falback_results: list[dict[str, Any]] = []
 
-    # abstain_threshold: Güven skoru bunun altındaysa model cevap vermez (ABSTAIN).
-    # answer_threshold: Güven skoru bunun üstündeyse model doğrudan cevap verir (ANSWER).
-    # İkisinin arasında kalırsa VERIFY olur.
-
-    # Amaç, farklı abstain_threshold ve answer_threshold çiftlerini deneyerek model için en güvenli ve en verimli eşikleri bulmaktır. Sonunda şartları en iyi karşılayan threshold çifti seçilir.
-    # Önce abstain_threshold yazılması sadece döngü sırasıdır; teknik olarak zorunlu değildir. Önce düşük sınırı belirleyip sonra ona uygun daha yüksek answer_threshold değerlerini denemek, kodu daha anlaşılır yapar.
     for abstain_threshold in candidates:
         for answer_threshold in candidates:
             if abstain_threshold >= answer_threshold:
                 continue
 
-            # Bu satır, seçilen abstain_threshold ve answer_threshold çiftini veri üzerinde test eder. Sonuç olarak kaç tane ANSWER, VERIFY, ABSTAIN çıktığını ve risk oranlarını hesaplayıp result içine koyar.
             result = evaluate_threshold_pair(
                 confidences=confidences,
-                labels=labels,
+                correct_labels=correct_labels,
                 abstain_threshold=float(abstain_threshold),
                 answer_threshold=float(answer_threshold),
             )
@@ -383,92 +286,70 @@ def select_thresholds(
             if result["abstain_count"] < minimum_abstain_count:
                 continue
 
-            # answer_risk: Modelin ANSWER verdiği örneklerdeki yanlış cevap oranı.
+            # the proportion of wrong answers among the predictions marked ANSWER.
             answer_risk = result["answer_risk"]
 
-            # abstain_correct_rate: Modelin ABSTAIN dediği örneklerde aslında doğru tahmin etmiş olma oranı.
+            # the proportion of actually correct predictions among those marked ABSTAIN, meaning unnecessary refusals.
             abstain_correct_rate = result["abstain_correct_rate"]
 
             if answer_risk is None or abstain_correct_rate is None:
                 continue
 
-            # Bu, answer_risk değerinin izin verilen sınırı ne kadar aştığını hesaplar.
+            # how far the actual answer risk exceeds the allowed limit.
             answer_risk_violation = max(0.0, answer_risk - max_answer_risk)
 
-            # Bu, abstain_correct_rate değerinin izin verilen maksimum oranı ne kadar aştığını hesaplar.
+            # how far unnecessary abstentions exceed the allowed limit.
             abstain_violation = max(
-                0.0, abstain_correct_rate - max_abstain_corrrect_rate
+                0.0, abstain_correct_rate - max_abstain_correct_rate
             )
 
-            # "answer_risk_violation" -> ANSWER risk sınırı ne kadar aşılmış
-            result["answer_risk_violation"] = answer_risk_violation
-
-            # "abstain_constraint_violation" -> ABSTAIN sınırı ne kadar aşılmış
-            result["abstain_constraint_violation"] = abstain_violation
-
-            # threshold çiftinin kuralları toplamda ne kadar aştığını gösterir. Değer ne kadar küçükse sonuç o kadar iyidir
+            result["anser_risk_violation"] = answer_risk_violation
+            result["abstain_violation"] = abstain_violation
             result["total_constraint_violation"] = (
                 answer_risk_violation + abstain_violation
             )
 
-            # her threshold çiftinin sonucu, gerektiğinde yedek seçenek olarak kullanılmak üzere saklanır.
-            fallback_results.append(result)
+            # stores an infeasible threshold pair as a backup in case no feasible solution exists
+            falback_results.append(result)
 
-            # Bu kod, iki güvenlik şartının da sağlanıp sağlanmadığını kontrol eder:
             constraints_satisfied = (
                 answer_risk <= max_answer_risk
-                and abstain_correct_rate <= max_abstain_corrrect_rate
+                and abstain_correct_rate <= max_abstain_correct_rate
             )
 
-            # Eğer tüm güvenlik şartları sağlandıysa, o threshold çiftinin sonucunu feasible_results listesine ekler. Yani uygun ve güvenli sonuçları saklar
             if constraints_satisfied:
                 feasible_results.append(result)
 
-    # feasible_results boş değilse, içindeki en iyi sonucu seçer.
-    # Öncelik sırası:
-    # En yüksek answer_coverage
-    # En yüksek direct_decision_rate
-    # En düşük answer_risk
-    # En düşük abstain_correct_rate
-    # Sonra güvenlik koşullarının sağlandığını belirtmek için:
-    # constraints_satisfied = True yapar
+    # Check whether there is at least one threshold pair that satisfies all constraints
+    # Priority order:
+    # Highest answer_coverage
+    # Highest direct_decision_rate
+    # Lowest answer_risk
+    # Lowest abstain_correct_rate
     if feasible_results:
+        # Select the best threshold pair according to the comparison rules in key
         best_result = max(
             feasible_results,
             key=lambda result: (
-                result[
-                    "answer_coverage"
-                ],  # Modelin kaç soruya cevap verdiği. Yüksek olması, daha az “cevap veremiyorum” demesi demektir.
-                result[
-                    "direct_decision_rate"
-                ],  # Modelin kaç durumda doğrudan karar verdiği.
-                -result[
-                    "answer_risk"
-                ],  # Verilen cevapların hatalı veya riskli olma oranı. Başındaki - nedeniyle düşük olması tercih ediliyor.
-                -result[
-                    "abstain_correct_rate"  # Model cevap vermediğinde, bu kaçınmanın ne kadar doğru olduğu. Örneğin gerçekten belirsiz bir soruda cevap vermemesi.
-                ],
+                result["answer_coverage"],
+                result["direct_decision_rate"],
+                -result["answer_risk"],
+                -result["abstain_correct_rate"],
             ),
         )
 
+        # Indicate that the selected threshold pair satisfies all constraints.
         constraints_satisfied = True
 
     else:
-        # Pilot veri küçük olduğunda bazen hiçbir threshold tüm kısıtları karşılamayabilir.
-        # Bu durumda programı tamamen durdurmak yerine,
-        # en az constraint ihlali yapan sonucu kaydederiz.
-        if not fallback_results:
+        if not falback_results:
             raise ValueError(
                 "No threshold pair produced enough ANSWER and ABSTAIN examples."
             )
 
-        # Bu kod, fallback_results içinden kuralları en az ihlal eden sonucu seçmek içindir.
-        # Öncelik sırası:
-        # En düşük total_constraint_violation
-        # En yüksek answer_coverage
-        # En yüksek direct_decision_rate
+        # Select the least bad threshold pair according to the comparison rules in key.
         best_result = min(
-            fallback_results,
+            falback_results,
             key=lambda result: (
                 result["total_constraint_violation"],
                 -result["answer_coverage"],
@@ -476,18 +357,20 @@ def select_thresholds(
             ),
         )
 
+        # Indicate that the selected threshold pair does not satisfy all constraints but is the best available.
         constraints_satisfied = False
 
-    # Bu sözlük, eşik araması sonucunda seçilen en iyi ayarın özetini saklıyor.
     selection_result = {
         # Kullanılan seçim yöntemi
         "method": (
-            "constrained_three_way_"  # Model üç karar verebilir: cevapla, kaçın/abstain, veya aradaki başka bir karar sınıfı.
-            "threshold_search"  # Farklı eşik çiftleri denenir; yalnızca belirlenen risk, cevap oranı ve örnek sayısı koşullarını sağlayanlar kabul edilir.
+            # Model üç karar verebilir: cevapla, kaçın/abstain, veya aradaki başka bir karar sınıfı.
+            "constrained_three_way_"
+            # Farklı eşik çiftleri denenir; yalnızca belirlenen risk, cevap oranı ve örnek sayısı koşullarını sağlayanlar kabul edilir.
+            "threshold_search"
         ),
         # Modelin karar eşikleri calibration verisi üzerinde ayarlanmış. Test verisi bu ayarlama sırasında kullanılmamış.
         "fit_split": "calibration",
-        # # test seti tarafsız değerlendirme için saklanmış.
+        # test seti tarafsız değerlendirme için saklanmış.
         "test_set_used_for_selection": False,
         # constraints_satisfied, seçilen sonucun belirlenen tüm koşulları sağlayıp sağlamadığını gösterir.
         "constraints_satisfied": (constraints_satisfied),
@@ -496,7 +379,7 @@ def select_thresholds(
             # Cevap verirken izin verilen en yüksek hata/risk oranı
             "max_answer_risk": (max_answer_risk),
             # Kaçınma ile ilgili izin verilen en yüksek oran
-            "max_abstain_correct_rate": (max_abstain_corrrect_rate),
+            "max_abstain_correct_rate": (max_abstain_correct_rate),
             # Modelin en az cevap vermesi gereken oran
             "min_answer_rate": (min_answer_rate),
             # Modelin en az kaçınması gereken oran
@@ -518,7 +401,7 @@ def select_thresholds(
                 + len(
                     [
                         result
-                        for result in fallback_results
+                        for result in falback_results
                         if result not in feasible_results
                     ]
                 )
@@ -533,24 +416,21 @@ def select_thresholds(
     return selection_result
 
 
-# Bu fonksiyon, tahmin listesindeki (predictions) her bir model çıktısının güven skorunu (confidence) inceleyerek belirlenen iki eşik değerine (abstain_threshold ve answer_threshold) göre bir karar (ANSWER, VERIFY veya ABSTAIN) atar. Daha sonra bu kararı ve kullanılan eşik bilgilerini tahmin sözlüklerine ekleyerek güncellenmiş yeni bir liste döndürür.
+# abels every prediction with its final decision and records the thresholds used to make that decision.
 def annotate_predictions(
-    predictions: list[dict[str, Any]], abstain_threshold: float, answer_threshold: float
+    predicstions: list[dict[str, Any]],
+    abstain_threshold: float,
+    answer_threshold: float,
 ) -> list[dict[str, Any]]:
-    """
-    Seçilen threshold'larla calibration kayıtlarına
-    ANSWER, VERIFY veya ABSTAIN kararı ekler.
-    """
-
     annotated_predictions: list[dict[str, Any]] = []
 
-    for prediction in predictions:
+    for prediction in predicstions:
         confidence = float(prediction["confidence"])
 
         decision = assign_decision(
             confidence=confidence,
-            abstain_threshold=(abstain_threshold),
-            answer_threshold=(answer_threshold),
+            abstain_threshold=abstain_threshold,
+            answer_threshold=answer_threshold,
         )
 
         updated_prediction = prediction.copy()
@@ -569,7 +449,7 @@ def annotate_predictions(
     return annotated_predictions
 
 
-# Bu fonksiyon, model tahminlerinin güven skorlarını analiz ederek güvenli bir karar verme mekanizması kurar. Belirlenen başarı/risk kısıtlarına göre iki farklı eşik değeri (vazgeçme ve yanıtlama) hesaplar, tahminleri bu eşiklere göre etiketleyip sonuçları dosyalara kaydeder.
+# orchestrates the entire threshold selection workflow from loading predictions to saving the final thresholds and annotated predictions.
 def run_threshold_selection(
     input_path: str | Path,
     output_path: str | Path,
@@ -580,19 +460,16 @@ def run_threshold_selection(
     min_abstain_rate: float,
     grid_size: int,
 ) -> dict[str, Any]:
-    """
-    Threshold selection sürecini çalıştırır.
-    """
 
     predictions = load_jsonl(input_path)
 
-    confidences, labels = validate_predictions(predictions)
+    confidences, correct_labels = validate_predictions(predictions)
 
     selection_result = select_thresholds(
         confidences=confidences,
-        labels=labels,
+        correct_labels=correct_labels,
         max_answer_risk=max_answer_risk,
-        max_abstain_corrrect_rate=(max_abstain_correct_rate),
+        max_abstain_correct_rate=max_abstain_correct_rate,
         min_answer_rate=min_answer_rate,
         min_abstain_rate=min_abstain_rate,
         grid_size=grid_size,
