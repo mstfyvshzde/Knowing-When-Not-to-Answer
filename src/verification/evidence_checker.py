@@ -1,19 +1,5 @@
 """
-Independent evidence checker for generated QA answers.
-
-Bu dosyanın görevi:
-1. Raw baseline tarafından üretilen cevapları okumak.
-2. Aynı question + context çiftini farklı bir QA modeline vermek.
-3. Verifier modelinin cevabını raw model cevabıyla karşılaştırmak.
-4. Cevabı SUPPORTED, UNSUPPORTED veya UNCERTAIN olarak etiketlemek.
-
-Önemli:
-Bu verifier kusursuz bir truth detector değildir.
-
-Sadece şu soruyu araştırır:
-
-"Bağımsız ikinci bir model, ilk modelin cevabını aynı evidence
-üzerinde doğruluyor mu?"
+This file uses an independent QA model to verify the original model's answers, classify them as SUPPORTED, UNSUPPORTED, or UNCERTAIN, and save the verification results for later decision-making.
 """
 
 import argparse
@@ -28,9 +14,8 @@ from transformers import pipeline
 
 from src.utils.io import load_jsonl, save_jsonl
 
-# Raw cevapları üreten modelden farklı bir model kullanıyoruz.
-
-# Farklı model kullanmak iki sistemin tamamen aynı hataları tekrarlama ihtimalini bir miktar azaltır.
+# It names the independent QA model used to check the original model’s answer.
+# We need it so the system can compare the original answer with a second model’s answer and judge whether the evidence supports it.
 VERIFIER_MODEL_NAME = "deepset/deberta-v3-base-squad2"
 
 
@@ -39,29 +24,16 @@ DEFAULT_INPUT_PATH = Path("outputs/predictions/raw_baseline_calibration.jsonl")
 OUTPUT_PATH = Path("outputs/predictions/evidence_verified_calibration.jsonl")
 
 
-def normalize_answer(text: str) -> str:
-    """
-    İki cevabı karşılaştırmadan önce normalize eder.
-
-    Örnek:
-        "The James Watt!" → "james watt"
-
-    İşlemler:
-    - küçük harfe çevirme
-    - punctuation kaldırma
-    - a, an, the article'larını kaldırma
-    - gereksiz boşlukları temizleme
-    """
-
+# converts answers into a clean, standardized format so they can be compared fairly, even if they have different capitalization, punctuation, articles, or spacing._
+def normalize_answe(text: str) -> str:
     text = text.lower()
 
+    # This block removes punctuation from the text.
     text = "".join(
-        character
-        for character in text
-        if character
-        not in string.punctuation  # string.punctuation, Python’daki yaygın noktalama işaretlerini içeren bir metindir.
+        character for character in text if character not in string.punctuation
     )
 
+    # It removes the articles a, an, and the from the text before comparison.
     text = re.sub(
         r"\b(a|an|the)\b",
         " ",
@@ -71,38 +43,17 @@ def normalize_answer(text: str) -> str:
     return " ".join(text.split())
 
 
-# overlap, iki cevapta ortak bulunan tokenların toplam sayısıdır.
+# measures how similar two answers are by comparing their words and returns an F1 similarity score between 0 and 1.
 def answer_overlap_f1(first_answer: str, second_answer: str) -> float:
-    """
-    İki answer arasındaki token örtüşmesini ölçer.
+    # The model’s answer is the answer produced by your main QA system first
+    first_tokens = normalize_answe(first_answer).split()
 
-    Neden Exact Match kullanmıyoruz?
+    # the verifier model’s answer is a second, independent answer generated from the same question and context to check whether it agrees.
+    second_tokens = normalize_answe(second_answer).split()
 
-    Çünkü iki model aynı doğru cevabı farklı uzunlukta verebilir.
-
-    Örnek:
-        İlk model:     "James Watt"
-        Verifier:      "Watt"
-
-    Exact Match:
-        0
-
-    Token overlap F1:
-        0'dan büyük
-
-    Returns:
-        0.0 ile 1.0 arasında benzerlik değeri.
-    """
-
-    first_tokens = normalize_answer(first_answer).split()
-
-    second_tokens = normalize_answer(second_answer).split()
-
-    # Cevaplardan biri boşsa örtüşme yoktur.
     if not first_answer or not second_answer:
         return 0.0
 
-    # İki cevapta ortak bulunan kelimeleri sayıyoruz.
     common_tokens = Counter(first_answer) & Counter(second_answer)
 
     overlap = sum(common_tokens.values())
@@ -110,42 +61,36 @@ def answer_overlap_f1(first_answer: str, second_answer: str) -> float:
     if overlap == 0:
         return 0.0
 
+    # Precision uses the first answer because the first answer is treated as the prediction.
     precision = overlap / len(first_tokens)
+
+    # Recall uses the second answer because the second answer is treated as the reference/verifier answer.
     recall = overlap / len(second_tokens)
 
-    return 2 * precision * recall / (precision + recall)
+    f1_score = 2 * precision * recall / (precision + recall)
+
+    return f1_score
 
 
+# it checks whether the requested device is available and returns the correct torch.device for efficiency
 def select_device(device_name: str) -> torch.device:
-    """
-    Verifier modelinin çalışacağı cihazı seçer.
-
-    cpu:
-        Normal işlemci.
-
-    mps:
-        Apple Silicon GPU.
-
-    cuda:
-        NVIDIA GPU.
-    """
-
     if device_name == "mps":
         if not torch.backends.mps.is_available():
             raise RuntimeError("MPS was requested but is not available.")
 
         return torch.device("mps")
 
-    if device_name == "cude":
+    if device_name == "cuda":
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA was requested but is not available.")
 
-        return torch.device("cude")
+        return torch.device("cuda")
 
     return torch.device("cpu")
 
 
-def classify_evidence(
+# decides whether the generated answer is SUPPORTED, UNSUPPORTED, or UNCERTAIN by comparing it with the verifier model’s answer and confidence score.
+def classify_evdence(
     generated_answer: str,
     verifier_answer: str,
     verifier_score: float,
@@ -153,42 +98,17 @@ def classify_evidence(
     match_threshold: float,
     contradiction_threshold: float,
 ) -> tuple[str, str, float]:
-    """
-    Verifier sonucunu evidence label'a dönüştürür.
-
-    Returns:
-        evidence_label
-        evidence_reason
-        answer_match_f1
-
-    Label mantığı:
-
-    1. Verifier güçlü şekilde aynı cevabı bulursa:
-       SUPPORTED
-
-    2. Verifier yüksek skorla farklı cevap bulursa
-       veya yüksek skorla cevap olmadığını söylerse:
-       UNSUPPORTED
-
-    3. Sonuç yeterince net değilse:
-       UNCERTAIN
-    """
-
     answer_match = answer_overlap_f1(generated_answer, verifier_answer)
 
-    # Verifier boş cevap döndürdüyse:
-    # context içinde güvenilir bir cevap bulamamış olabilir.
-    if (
-        not verifier_answer.strip()
-    ):  # strip(), metnin başındaki ve sonundaki boşlukları siler.
-        if (
-            verifier_score >= contradiction_threshold
-        ):  # contradiction_threshold, modelin “bu cevap context tarafından desteklenmiyor” demesi için gereken sınır değerdir.
+    # verifier_answer -> The answer given by the verifier model.
+    if not verifier_answer.strip():
+        # verifier_score -> how confident the verifier model is in its own answer.
+        # contradiction_threshold -> The minimum verifier confidence needed to strongly reject the generated answer as unsupported.
+        if verifier_score >= contradiction_threshold:
             return (
                 "UNSUPPORTED",
                 (
-                    "Verifier predicted that the question "
-                    "is unanswerable from the context."
+                    "Verifier predicted that the question is unanswerable from the context."
                 ),
                 answer_match,
             )
@@ -202,8 +122,10 @@ def classify_evidence(
             answer_match,
         )
 
-    # İkinci model de benzer cevabı bulduysa
-    # ilk cevabı supported kabul ediyoruz.
+    # answer_match -> How similar the original answer and verifier answer are.
+    # match_threshold -> The minimum similarity needed to consider the two answers a match.
+    # verifier_score -> How confident the verifier model is in its own answer.
+    # support_threshold -> The minimum verifier confidence needed to label the original answer as SUPPORTED.
     if answer_match >= match_threshold and verifier_score >= support_threshold:
         return (
             "SUPPORTED",
@@ -211,8 +133,6 @@ def classify_evidence(
             answer_match,
         )
 
-    # Verifier güçlü ama tamamen farklı bir cevap verdiyse
-    # ilk cevabın desteklenmediğini düşünüyoruz.
     if answer_match < 0.20 and verifier_score >= contradiction_threshold:
         return (
             "UNSUPPORTED",
@@ -220,7 +140,6 @@ def classify_evidence(
             answer_match,
         )
 
-    # Diğer bütün belirsiz durumlar.
     return (
         "UNCERTAIN",
         "Verifier evidence was not decisive.",
@@ -228,28 +147,21 @@ def classify_evidence(
     )
 
 
-def verity_predictions(
+# uses an independent verifier model to check every generated answer, classify the evidence, and return the updated predictions with verification results.
+def verify_predictions(
     predictions: list[dict[str, Any]],
     device_name: str = "cpu",
     support_threshold: float = 0.30,
     match_threshold: float = 0.80,
     contradiction_threshold: float = 0.50,
 ) -> list[dict[str, Any]]:
-    """
-    Bu fonksiyon, modelin ürettiği bütün cevapları verilen kaynak metne göre kontrol eder.
-
-    Kullanılan eşik değerleri şimdilik geçicidir.
-
-    Daha sonra bu değerler, ayrı bir doğrulama veri seti üzerinde test edilerek en uygun şekilde belirlenecektir.
-    """
-
     device = select_device(device_name)
 
     print(f"Loading verifier model: {VERIFIER_MODEL_NAME}")
 
     print(f"Using device: {device}")
 
-    # İkinci, bağımsız QA modelini yüklüyoruz.
+    # It loads the verifier QA model and creates a question-answering pipeline that can answer questions from a given context.
     verifier = pipeline(
         task="question-answering",
         model=VERIFIER_MODEL_NAME,
@@ -260,39 +172,29 @@ def verity_predictions(
     verified_predictions: list[dict[str, Any]] = []
 
     for index, prediction in enumerate(predictions, start=1):
-        # Evidence checker'ın çalışması için
-        # question ve context zorunludur.
         question = prediction["question"]
-        context = prediction[
-            "context"
-        ]  # context, sorunun cevabını bulmak için modele verilen kaynak metindir
+        context = prediction["context"]
 
-        generated_answer = prediction["prediction_text"]  # modelin ürettiği cevap metni
+        generated_answer = prediction["prediction_text"]
 
-        # Verifier modeline aynı question ve context'i veriyoruz.
-
-        # handle_impossible_answer=True:
-        # Verifier gerektiğinde boş cevap döndürebilir.
+        # top_k=1 -> Return only the single best answer.
+        # handle_impossible_answer=True -> Allow the model to return no answer if the context does not contain one.
         verifier_result = verifier(
-            question=question, context=context, top_k=1, handle_impossible_anser=True
+            question=question, context=context, top_k=1, handle_impossible_answer=True
         )
 
         verifier_answer = str(verifier_result["answer"])
-
         verifier_score = float(verifier_result["score"])
 
-        # Verifier çıktısını üç evidence label'dan
-        # birine dönüştürüyoruz.
-        evidence_label, evidence_reason, answer_match = classify_evidence(
+        evidence_label, evidence_reason, answer_match = classify_evdence(
             generated_answer=generated_answer,
             verifier_answer=verifier_answer,
             verifier_score=verifier_score,
             support_threshold=support_threshold,
             match_threshold=match_threshold,
-            contradiction_threshold=(contradiction_threshold),
+            contradiction_threshold=contradiction_threshold,
         )
 
-        # Raw prediction'ı kaybetmemek için kopyalıyoruz.
         verified_prediction = prediction.copy()
 
         verified_prediction.update(
@@ -301,6 +203,7 @@ def verity_predictions(
                 "verifier_score": verifier_score,
                 "answer_match_f1": answer_match,
                 "evidence_label": evidence_label,
+                # short explanation of why the evidence was classified as SUPPORTED, UNSUPPORTED, or UNCERTAIN.
                 "evidence_reason": evidence_reason,
                 "verifier_model": VERIFIER_MODEL_NAME,
             }
@@ -325,11 +228,10 @@ def verity_predictions(
     return verified_predictions
 
 
-def summarize_evidence(predictions: list[dict[str, Any]]) -> dict[str, int | float]:
-    """
-    Evidence label dağılımını hızlıca özetler.
-    """
-
+# counts how many predictions are SUPPORTED, UNSUPPORTED, and UNCERTAIN, then calculates their rates.
+def summarize_evidence(
+    predictions: list[str[dict[str, Any]]],
+) -> dict[str, int | float]:
     total = len(predictions)
 
     if total == 0:
@@ -343,7 +245,7 @@ def summarize_evidence(predictions: list[dict[str, Any]]) -> dict[str, int | flo
         prediction["evidence_label"] == "UNSUPPORTED" for prediction in predictions
     )
 
-    uncertain = total - supported - unsupported
+    uncertain = torch - (supported + unsupported)
 
     return {
         "total": total,
@@ -356,18 +258,12 @@ def summarize_evidence(predictions: list[dict[str, Any]]) -> dict[str, int | flo
     }
 
 
+# runs the complete evidence checking pipeline: it loads predictions, verifies them with the verifier model, saves the results, prints a summary, and returns the verified predictions.
 def run_evidence_checker(
     input_path: str | Path, output_path: str | Path, device_name: str
 ) -> list[dict[str, Any]]:
-    """
-    Evidence checker'ın ana çalışma fonksiyonu.
-    """
-
-    # Raw baseline prediction'larını yükle.
     predictions = load_jsonl(input_path)
 
-    # Context alanı eklenmeden oluşturulan eski
-    # prediction dosyalarını engelliyoruz.
     missing_context = any("context" not in prediction for prediction in predictions)
 
     if missing_context:
@@ -377,15 +273,13 @@ def run_evidence_checker(
             "the context field."
         )
 
-    verified_predictions = verity_predictions(
+    verified_predictions = verify_predictions(
         predictions=predictions, device_name=device_name
     )
 
     save_jsonl(verified_predictions, output_path)
 
-    summary = summarize_evidence(
-        verified_predictions,
-    )
+    summary = summarize_evidence(verified_predictions)
 
     print("\nEvidence verification completed.")
 
