@@ -1,0 +1,36 @@
+# This configuration file stores the verification model settings, thresholds, evidence window size, and standard labels in one central place so the verification system can use consistent parameters.
+
+
+# Settings for the independent QA verifier
+evidence_checker:
+  # Which verifier model we use
+  model_name: "deepset/deberta-v3-base-squad2"
+  # Minimum confidence required to consider an answer supported
+  support_threshold: 0.30
+  # How similar the generated answer must be to the verifier’s answer
+  match_threshold: 0.80
+  # Confidence required to strongly classify an answer as UNSUPPORTED
+  contradiction_threshold: 0.50
+
+
+# Settings for the context/evidence-based verifier
+evidence_verifier:
+
+  # Number of characters of evidence taken from around the answer
+  evidence_window_size: 120
+  # If the score is above this threshold -> SUPPORTED
+  supported_threshold: 0.75
+  # If the score is above this threshold but below supported_threshold -> WEAK
+  weak_threshold: 0.40
+
+
+# Standard verification labels used in the system
+labels:
+  supported: "SUPPORTED"
+  weak: "WEAK"
+  unsupported: "UNSUPPORTED"
+  uncertain: "UNCERTAIN"
+
+
+
+

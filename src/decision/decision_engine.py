@@ -192,7 +192,7 @@ def calculate_decision_metrics(predictions: list[dict[str, Any]]) -> dict[str, A
 
             if decision_predictions:
                 correct_count = sum(
-                    bool(prediction["is_correct"]) for prediction in predictions
+                    bool(prediction["is_correct"]) for prediction in decision_predictions
                 )
 
                 accuracy = correct_count / len(decision_predictions)
