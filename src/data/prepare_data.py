@@ -178,7 +178,7 @@ def prepare_dataset(overwrite: bool = False) -> DatasetDict:
 
     calibration_indices, test_indices = stratified_split_indices(
         labels=validation_dataset["is_answerable"],
-        calibration_franction=CALIBRATION_FRACTION,
+        calibration_fraction=CALIBRATION_FRACTION,
         seed=SEED,
     )
 

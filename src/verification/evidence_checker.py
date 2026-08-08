@@ -54,7 +54,7 @@ def answer_overlap_f1(first_answer: str, second_answer: str) -> float:
     if not first_answer or not second_answer:
         return 0.0
 
-    common_tokens = Counter(first_answer) & Counter(second_answer)
+    common_tokens = Counter(first_tokens) & Counter(second_tokens)
 
     overlap = sum(common_tokens.values())
 
@@ -230,7 +230,7 @@ def verify_predictions(
 
 # counts how many predictions are SUPPORTED, UNSUPPORTED, and UNCERTAIN, then calculates their rates.
 def summarize_evidence(
-    predictions: list[str[dict[str, Any]]],
+    predictions: list[dict[str, Any]],
 ) -> dict[str, int | float]:
     total = len(predictions)
 
@@ -245,7 +245,7 @@ def summarize_evidence(
         prediction["evidence_label"] == "UNSUPPORTED" for prediction in predictions
     )
 
-    uncertain = torch - (supported + unsupported)
+    uncertain = total - (supported + unsupported)
 
     return {
         "total": total,

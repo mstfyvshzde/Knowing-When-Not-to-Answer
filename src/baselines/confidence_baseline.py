@@ -32,7 +32,7 @@ def apply_confidence_threshold(
     updated_predictions: list[dict[str, Any]] = []
 
     for prediction in predictions:
-        confidence = float(prediction["confidence"])
+        confidence = float(prediction["pipeline_score"])
 
         if confidence >= threshold:
             decision = "ANSWER"
