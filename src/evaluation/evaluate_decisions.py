@@ -1,14 +1,5 @@
 """
-Nihai seçici soru-cevap karar sistemi için değerlendirme araçları.
 
-Bu modül şunları değerlendirir:
-
-1. Tam kapsamlı soru-cevap doğruluğu.
-2. Nihai ANSWER / VERIFY / ABSTAIN kararları.
-3. Cevap kapsamı ve seçici risk.
-4. Yalnızca güven skoruna dayalı eşik politikası.
-5. Kanıt farkındalıklı nihai politika.
-6. Karar nedeni ve kanıt dağılımları.
 """
 
 import argparse
@@ -33,15 +24,10 @@ VALID_DECISIONS = {
 }
 
 
+# Converts different representations of true/false values into a real Python boolean and raises an error for invalid values.
 def normalize_boolean(
     value: Any,
 ) -> bool:
-    """
-    Farklı doğruluk gösterimlerini Python boolean
-    değerine dönüştürür.
-    """
-
-    # Değer zaten boolean ise doğrudan döndürülür.
     if isinstance(value, bool):
         return value
 
@@ -59,7 +45,7 @@ def normalize_boolean(
         if value == 0.0:
             return False
 
-    # Metinsel değerler boşluk ve büyük/küçük harf farkından arındırılır.
+
     if isinstance(value, str):
         normalized_value = value.strip().lower()
 
@@ -86,20 +72,11 @@ def normalize_boolean(
     raise ValueError(f"Could not convert correctness value to boolean: {value!r}")
 
 
+
+# Normalizes an answer by converting it to lowercase, removing punctuation and English articles, and cleaning extra spaces for fair text comparison.
 def normalize_answer(
     text: Any,
 ) -> str:
-    """
-    SQuAD tarzı cevap normalizasyonu uygular.
-
-    İşlemler:
-
-    1. Küçük harfe dönüştürür.
-    2. Noktalama işaretlerini kaldırır.
-    3. İngilizce artikelleri kaldırır.
-    4. Fazladan boşlukları kaldırır.
-    """
-
     normalized_text = str(text or "").lower()
 
     # Noktalama karakterleri tek tek filtrelenir.
@@ -121,28 +98,13 @@ def normalize_answer(
     return normalized_text
 
 
+# Extracts reference answers from different possible data formats and returns them as a clean list of strings.
 def extract_reference_answers(
     prediction: dict[str, Any],
 ) -> list[str]:
-    """
-    reference_answers değerini standart bir cevap
-    metinleri listesine dönüştürür.
-
-    Desteklenen biçimler:
-
-    ["answer one", "answer two"]
-
-    {
-        "text": ["answer one", "answer two"],
-        "answer_start": [10, 25]
-    }
-
-    "single answer"
-    """
-
     reference_answers = prediction.get(
         "reference_answers",
-        [],
+        []
     )
 
     if reference_answers is None:
@@ -154,15 +116,15 @@ def extract_reference_answers(
     ):
         return [reference_answers]
 
-    # Sözlük biçiminde farklı veri sürümlerinde kullanılan alan adları aranır.
+
     if isinstance(
         reference_answers,
-        dict,
+        dict
     ):
         possible_fields = (
             "text",
             "answers",
-            "answer_text",
+            "answer_text"
         )
 
         for field in possible_fields:
@@ -173,17 +135,16 @@ def extract_reference_answers(
 
             if isinstance(
                 values,
-                str,
+                str
             ):
                 return [values]
 
             if isinstance(
                 values,
-                list,
+                list
             ):
                 extracted_values: list[str] = []
 
-                # Liste elemanı sözlükse cevap metni olası anahtarlardan alınır.
                 for value in values:
                     if isinstance(value, dict):
                         answer_text = (
@@ -202,22 +163,24 @@ def extract_reference_answers(
 
         return []
 
+
+
     if isinstance(
         reference_answers,
-        list,
+        list
     ):
         extracted_answers: list[str] = []
 
         for item in reference_answers:
             if isinstance(
                 item,
-                str,
+                str
             ):
                 extracted_answers.append(item)
 
             elif isinstance(
                 item,
-                dict,
+                dict
             ):
                 answer_text = (
                     item.get("text") or item.get("answer") or item.get("answer_text")
@@ -234,28 +197,17 @@ def extract_reference_answers(
     return [str(reference_answers)]
 
 
+
+# Determines whether a prediction is correct by checking existing correctness fields first, or computing normalized Exact Match against reference answers as a fallback.
 def get_correctness(
     prediction: dict[str, Any],
 ) -> bool:
-    """
-    Bir soru-cevap tahmininin doğru olup olmadığını belirler.
-
-    Önce mevcut bir doğruluk alanı aranır.
-
-    Doğruluk alanı yoksa prediction_text ve
-    reference_answers kullanılarak normalize edilmiş
-    Exact Match hesaplanır.
-
-    Cevaplanamaz sorularda boş tahmin doğru kabul edilir.
-    """
-
-    # Önceden hesaplanmış doğruluk bilgisi farklı alan adlarıyla gelebilir.
     possible_fields = (
         "is_correct",
         "correct",
         "prediction_correct",
         "exact_match",
-        "em",
+        "em"
     )
 
     for field in possible_fields:
@@ -267,29 +219,30 @@ def get_correctness(
         # Exact Match bazı dosyalarda 1/100 veya metinsel değer olarak saklanabilir.
         if field in {
             "exact_match",
-            "em",
+            "em"
         }:
             try:
                 numeric_value = float(value)
 
             except (
                 TypeError,
-                ValueError,
+                ValueError
             ):
                 return normalize_boolean(value)
 
             return numeric_value in {
                 1.0,
-                100.0,
+                100.0
             }
 
         return normalize_boolean(value)
+
 
     # Hazır doğruluk alanı yoksa normalize edilmiş Exact Match hesaplanır.
     prediction_text = normalize_answer(
         prediction.get(
             "prediction_text",
-            "",
+            ""
         )
     )
 
@@ -307,7 +260,7 @@ def get_correctness(
 
     is_answerable_value = prediction.get(
         "is_answerable",
-        True,
+        True
     )
 
     try:
@@ -330,13 +283,11 @@ def get_correctness(
     return prediction_text in normalized_references
 
 
+
+# Gets and validates the prediction's final decision, standardizing it to uppercase and ensuring it is one of the allowed decision labels.
 def get_final_decision(
     prediction: dict[str, Any],
 ) -> str:
-    """
-    Nihai kararı okur ve doğrular.
-    """
-
     value = prediction.get("final_decision")
 
     if value is None:
@@ -351,20 +302,15 @@ def get_final_decision(
     return decision
 
 
+
+# Finds the first available threshold-based decision field, normalizes it, and returns it only if it is a valid decision.
 def get_threshold_decision(
     prediction: dict[str, Any],
 ) -> str | None:
-    """
-    Yalnızca güven skoruna dayalı eşik kararını okur.
-
-    Eşik kararı mevcut değilse None döndürür.
-    """
-
-    # Alan adı dosya sürümüne göre değişebildiği için olası adlar sırayla denenir.
     possible_fields = (
         "threshold_decision",
         "confidence_decision",
-        "selective_decision",
+        "selective_decision"
     )
 
     for field in possible_fields:
@@ -381,15 +327,11 @@ def get_threshold_decision(
     return None
 
 
+# Safely divides two numbers and returns None instead of causing an error when the denominator is zero.
 def safe_divide(
     numerator: float,
-    denominator: float,
+    denominator: float
 ) -> float | None:
-    """
-    ZeroDivisionError oluşturmadan değerleri güvenli
-    biçimde böler.
-    """
-
     # Sıfıra bölme hatası yerine hesaplanamayan metrik için None kullanılır.
     if denominator == 0:
         return None
@@ -397,23 +339,11 @@ def safe_divide(
     return float(numerator / denominator)
 
 
+# Evaluates all predictions with a specific final decision and calculates that group's count, rate, accuracy, and selective risk.
 def evaluate_decision_group(
     predictions: list[dict[str, Any]],
-    decision: str,
+    decision: str
 ) -> dict[str, Any]:
-    """
-    Tek bir karar grubunu değerlendirir.
-
-    Hesaplanan değerler:
-
-    count
-    rate
-    correct_count
-    incorrect_count
-    accuracy
-    risk
-    """
-
     # Yalnızca istenen nihai karara sahip tahminler seçilir.
     selected_predictions = [
         prediction
@@ -433,7 +363,7 @@ def evaluate_decision_group(
 
     accuracy = safe_divide(
         correct_count,
-        count,
+        count
     )
 
     # Seçici risk, cevaplanan örneklerdeki hata oranıdır: 1 - doğruluk.
@@ -443,24 +373,19 @@ def evaluate_decision_group(
         "count": count,
         "rate": safe_divide(
             count,
-            total,
+            total
         ),
         "correct_count": correct_count,
         "incorrect_count": incorrect_count,
         "accuracy": accuracy,
-        "risk": risk,
+        "risk": risk
     }
 
 
+# Evaluates the original threshold-based policy by measuring how often it chooses ANSWER, VERIFY, or ABSTAIN and how accurate/risky its ANSWER decisions are.
 def evaluate_threshold_policy(
-    predictions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
-    """
-    Yalnızca güven skoruna dayalı eşik politikasını değerlendirir.
-
-    Bu, kanıt doğrulaması uygulanmadan önceki sistemi temsil eder.
-    """
-
     threshold_predictions: list[dict[str, Any]] = []
 
     for prediction in predictions:
@@ -473,7 +398,7 @@ def evaluate_threshold_policy(
         threshold_predictions.append(
             {
                 "decision": threshold_decision,
-                "is_correct": get_correctness(prediction),
+                "is_correct": get_correctness(prediction)
             }
         )
 
@@ -490,7 +415,7 @@ def evaluate_threshold_policy(
 
     answer_accuracy = safe_divide(
         answer_correct_count,
-        len(answer_predictions),
+        len(answer_predictions)
     )
 
     selective_risk = None if answer_accuracy is None else 1.0 - answer_accuracy
@@ -502,33 +427,30 @@ def evaluate_threshold_policy(
         "abstain_count": counts["ABSTAIN"],
         "answer_coverage": safe_divide(
             counts["ANSWER"],
-            total,
+            total
         ),
         "verify_rate": safe_divide(
             counts["VERIFY"],
-            total,
+            total
         ),
         "abstain_rate": safe_divide(
             counts["ABSTAIN"],
-            total,
+            total
         ),
         "answer_accuracy": answer_accuracy,
-        "selective_risk": selective_risk,
+        "selective_risk": selective_risk
     }
 
 
+# Counts how often each decision reason appears across all predictions and returns the distribution.
 def evaluate_reason_distribution(
-    predictions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]]
 ) -> dict[str, int]:
-    """
-    Karar nedenlerini sayar.
-    """
-
     reason_counts = Counter(
         str(
             prediction.get(
                 "decision_reason",
-                "unknown",
+                "unknown"
             )
         )
         for prediction in predictions
@@ -537,18 +459,15 @@ def evaluate_reason_distribution(
     return dict(reason_counts)
 
 
+# Counts how often each evidence-support label appears across all predictions and returns the distribution.
 def evaluate_evidence_distribution(
-    predictions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]]
 ) -> dict[str, int]:
-    """
-    Kanıt destek etiketlerini sayar.
-    """
-
     evidence_counts = Counter(
         str(
             prediction.get(
                 "evidence_support",
-                "UNKNOWN",
+                "UNKNOWN"
             )
         )
         .strip()
@@ -559,13 +478,10 @@ def evaluate_evidence_distribution(
     return dict(evidence_counts)
 
 
+# Calculates the overall final-system evaluation by measuring baseline accuracy, performance of ANSWER/VERIFY/ABSTAIN groups, threshold-only performance, evidence/reason distributions, and changes in risk and coverage.
 def calculate_final_metrics(
-    predictions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """
-    Tüm nihai seçici soru-cevap metriklerini hesaplar.
-    """
-
     if not predictions:
         raise ValueError("Prediction list cannot be empty.")
 
@@ -576,23 +492,23 @@ def calculate_final_metrics(
     # Tüm sorular cevaplanmış kabul edilerek temel doğruluk hesaplanır.
     baseline_accuracy = safe_divide(
         total_correct,
-        total,
+        total
     )
 
     # Her nihai karar grubu ayrı ayrı değerlendirilir.
     answer_metrics = evaluate_decision_group(
         predictions=predictions,
-        decision="ANSWER",
+        decision="ANSWER"
     )
 
     verify_metrics = evaluate_decision_group(
         predictions=predictions,
-        decision="VERIFY",
+        decision="VERIFY"
     )
 
     abstain_metrics = evaluate_decision_group(
         predictions=predictions,
-        decision="ABSTAIN",
+        decision="ABSTAIN"
     )
 
     threshold_policy = evaluate_threshold_policy(predictions)
@@ -607,11 +523,11 @@ def calculate_final_metrics(
             "answer_coverage": (answer_metrics["rate"]),
             "selective_risk": (answer_metrics["risk"]),
             "verify_rate": (verify_metrics["rate"]),
-            "abstain_rate": (abstain_metrics["rate"]),
+            "abstain_rate": (abstain_metrics["rate"])
         },
         "threshold_only_policy": (threshold_policy),
         "evidence_distribution": (evaluate_evidence_distribution(predictions)),
-        "decision_reason_distribution": (evaluate_reason_distribution(predictions)),
+        "decision_reason_distribution": (evaluate_reason_distribution(predictions))
     }
 
     # Kanıt doğrulaması öncesi ve sonrası risk/kapsam farkları hesaplanır.
@@ -634,60 +550,51 @@ def calculate_final_metrics(
                 None
                 if (final_coverage is None or threshold_coverage is None)
                 else (final_coverage - threshold_coverage)
-            ),
+            )
         }
 
     return metrics
 
 
+# Saves the calculated evaluation metrics as a formatted JSON file and creates the output directory if needed.
 def save_metrics(
     metrics: dict[str, Any],
-    output_path: str | Path,
+    output_path: str | Path
 ) -> None:
-    """
-    Değerlendirme metriklerini JSON dosyasına kaydeder.
-    """
-
     output_path = Path(output_path)
 
-    # Hedef klasör yoksa üst klasörleriyle birlikte oluşturulur.
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
     with output_path.open(
         "w",
-        encoding="utf-8",
+        encoding="utf-8"
     ) as file:
         json.dump(
             metrics,
             file,
             indent=2,
-            ensure_ascii=False,
+            ensure_ascii=False
         )
 
 
+# Formats an optional metric value to four decimal places, or returns "N/A" when the value is missing.
 def format_optional_metric(
-    value: float | None,
+    value: float | None
 ) -> str:
-    """
-    İsteğe bağlı sayısal metrikleri biçimlendirir.
-    """
-
     if value is None:
         return "N/A"
 
     return f"{value:.4f}"
 
 
-def print_metrics(
-    metrics: dict[str, Any],
-) -> None:
-    """
-    En önemli değerlendirme metriklerini ekrana yazdırır.
-    """
 
+# Prints the final selective-QA evaluation results, including ANSWER/VERIFY/ABSTAIN performance and comparison with the threshold-only policy.
+def print_metrics(
+    metrics: dict[str, Any]
+) -> None:
     final_policy = metrics["final_policy"]
 
     answer = final_policy["answer"]
@@ -759,13 +666,10 @@ def print_metrics(
         )
 
 
+# Validates that the prediction list is not empty and that every prediction has a valid final decision and correctness value.
 def validate_predictions(
     predictions: list[dict[str, Any]],
 ) -> None:
-    """
-    Gerekli değerlendirme alanlarını doğrular.
-    """
-
     if not predictions:
         raise ValueError("Prediction list cannot be empty.")
 
@@ -778,22 +682,17 @@ def validate_predictions(
 
             get_correctness(prediction)
 
-        # Hatanın hangi tahmin kaydında oluştuğu ek bağlamla yeniden bildirilir.
         except ValueError as error:
             raise ValueError(
                 f"Prediction {index} failed validation: {error}"
             ) from error
 
 
+# Runs the complete evaluation pipeline: loads predictions, validates them, calculates final metrics, saves the results, and prints them.
 def run_evaluation(
     input_path: str | Path,
-    output_path: str | Path,
+    output_path: str | Path
 ) -> dict[str, Any]:
-    """
-    Tüm değerlendirme işlem hattını çalıştırır.
-    """
-
-    # Veri yükleme, doğrulama, hesaplama, kaydetme ve yazdırma sırasıyla yürütülür.
     predictions = load_jsonl(input_path)
 
     validate_predictions(predictions)
@@ -802,7 +701,7 @@ def run_evaluation(
 
     save_metrics(
         metrics=metrics,
-        output_path=output_path,
+        output_path=output_path
     )
 
     print_metrics(metrics)
@@ -812,11 +711,8 @@ def run_evaluation(
     return metrics
 
 
+# Defines and reads command-line arguments for the final selective-QA evaluation, including the input predictions file and output metrics file.
 def parse_arguments() -> argparse.Namespace:
-    """
-    Komut satırı argümanlarını ayrıştırır.
-    """
-
     parser = argparse.ArgumentParser(
         description=(
             "Evaluate final ANSWER, VERIFY and ABSTAIN decisions for selective QA."
@@ -826,19 +722,18 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         default=str(DEFAULT_INPUT_PATH),
-        help=("JSONL file containing final selective QA decisions."),
+        help=("JSONL file containing final selective QA decisions.")
     )
 
     parser.add_argument(
         "--output",
         default=str(DEFAULT_OUTPUT_PATH),
-        help=("JSON output path for evaluation metrics."),
+        help=("JSON output path for evaluation metrics.")
     )
 
     return parser.parse_args()
 
 
-# Dosya doğrudan çalıştırıldığında komut satırı akışı başlatılır.
 if __name__ == "__main__":
     args = parse_arguments()
 

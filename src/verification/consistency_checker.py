@@ -293,7 +293,7 @@ def run_consistencey_check(
     )
 
     save_jsonl(
-        checked_prediction,
+        checked_predictions,
         output_path
     )
 

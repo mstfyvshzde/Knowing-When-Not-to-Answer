@@ -31,9 +31,9 @@ def validate_predictions(
         raise ValueError("Prediction list cannot be empty.")
 
     missing_confidence = [
-        prediction.get("it", "unknown")
+        prediction.get("id", "unknown")
         for prediction in predictions
-        if "confidnce" not in prediction
+        if "confidence" not in prediction
     ]
 
     if missing_confidence:
@@ -418,13 +418,13 @@ def select_thresholds(
 
 # abels every prediction with its final decision and records the thresholds used to make that decision.
 def annotate_predictions(
-    predicstions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]],
     abstain_threshold: float,
     answer_threshold: float,
 ) -> list[dict[str, Any]]:
     annotated_predictions: list[dict[str, Any]] = []
 
-    for prediction in predicstions:
+    for prediction in predictions:
         confidence = float(prediction["confidence"])
 
         decision = assign_decision(
