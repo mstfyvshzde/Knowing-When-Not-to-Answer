@@ -1,13 +1,10 @@
 """
-Evaluation metrics for selective question answering.
-
-Bu dosyanın görevleri:
-1. Model cevabını reference cevaplarla karşılaştırmak.
-2. ANSWER ve ABSTAIN kararlarının doğruluğunu ölçmek.
-3. Exact Match ve Token F1 hesaplamak.
-4. Accuracy, coverage ve selective risk hesaplamak.
-5. Değerlendirilen prediction'ları JSONL olarak kaydetmek.
+Core evaluation metrics for selective question answering.
+This module evaluates ANSWER and ABSTAIN behavior,
+including Exact Match, token F1, accuracy, coverage,
+abstention rate, and selective risk.
 """
+
 
 import argparse
 import re
@@ -19,45 +16,25 @@ from typing import Any
 from src.utils.io import load_jsonl, save_jsonl
 
 
+# Cleans an answer by lowercasing it, removing punctuation/articles, and normalizing spaces for fair text comparison.
 def normalize_answer(text: str) -> str:
-    """
-    Cevapları adil şekilde karşılaştırmak için normalize eder.
-
-    Yapılan işlemler:
-    - küçük harfe çevirme
-    - noktalama işaretlerini kaldırma
-    - a, an, the article'larını kaldırma
-    - gereksiz boşlukları temizleme
-
-    Örnek:
-        "The James Watt!" -> "james watt"
-    """
-
     if not isinstance(text, str):
         text = str(text)
 
     text = text.lower()
-
-    text = "".join(
+    text = ''.join(
         character for character in text if character not in string.punctuation
     )
-
     text = re.sub(r"\b(a|an|the)\b", " ", text)
 
     return " ".join(text.split())
 
 
+# Checks whether the normalized prediction exactly matches any normalized reference answer and returns 1.0 or 0.0.
 def exact_match_score(
     prediction: str,
-    references: list[str],
+    references: list[str]
 ) -> float:
-    """
-    Prediction, reference cevaplardan biriyle tamamen aynı mı?
-
-    Normalize edilmiş prediction herhangi bir normalize edilmiş
-    reference ile eşleşirse 1.0, aksi hâlde 0.0 döndürür.
-    """
-
     if not references:
         return 0.0
 
@@ -71,24 +48,12 @@ def exact_match_score(
     )
 
 
+# Measures partial word overlap between the prediction and reference answers using token-level F1, returning the best score.
 def token_f1_score(
     prediction: str,
-    references: list[str],
+    references: list[str]
 ) -> float:
-    """
-    Prediction ve reference cevaplar arasındaki kelime örtüşmesini ölçer.
-
-    Birden fazla reference varsa en yüksek F1 skoru kullanılır.
-
-    Örnek:
-        prediction = "viral"
-        reference = "viral antigens"
-
-        Exact Match = 0.0
-        Token F1 > 0.0
-    """
-
-    if not references:
+    if not references: 
         return 0.0
 
     prediction_tokens = normalize_answer(prediction).split()
@@ -121,45 +86,27 @@ def token_f1_score(
     return best_f1
 
 
+# Evaluates one prediction by checking whether the system's ANSWER/ABSTAIN decision is correct and calculating Exact Match and token-level F1 scores.
 def evaluate_single_prediction(
-    prediction: dict[str, Any],
+    prediction: dict[str, Any]
 ) -> dict[str, Any]:
-    """
-    Tek bir prediction'ın doğruluğunu değerlendirir.
-
-    Karar mantığı:
-
-    ANSWER + answerable:
-        Cevap reference cevaplarla karşılaştırılır.
-
-    ANSWER + unanswerable:
-        Model cevap vermemeliydi; karar yanlış kabul edilir.
-
-    ABSTAIN + unanswerable:
-        Doğru abstention kabul edilir.
-
-    ABSTAIN + answerable:
-        Gereksiz abstention kabul edilir.
-    """
-
     required_fields = {
         "decision",
-        "is_answerable",
+        "is_answerable"
     }
 
     missing_fields = required_fields - prediction.keys()
 
     if missing_fields:
-        missing_text = ", ".join(sorted(missing_fields))
+        missing_text = ', '.join(sorted(missing_fields))
 
         raise KeyError(f"Prediction is missing required fields: {missing_text}")
 
-    decision = str(prediction["decision"]).upper()
-    is_answerable = bool(prediction["is_answerable"])
+    decision = str(prediction['decision']).upper()
+    is_answerable = bool(prediction['is_answerable'])
 
-    predicted_answer = str(prediction.get("prediction_text", ""))
-
-    references = prediction.get("reference_answers", [])
+    predicted_answer = str(prediction.get('prediction_text', ''))
+    references = prediction.get('reference_answers', [])
 
     if references is None:
         references = []
@@ -169,7 +116,7 @@ def evaluate_single_prediction(
 
     references = [str(reference) for reference in references]
 
-    if decision == "ANSWER":
+    if decision == 'ANSWER':
         if not is_answerable:
             exact_match = 0.0
             token_f1 = 0.0
@@ -178,22 +125,20 @@ def evaluate_single_prediction(
         else:
             exact_match = exact_match_score(
                 predicted_answer,
-                references,
+                references
             )
 
             token_f1 = token_f1_score(
                 predicted_answer,
-                references,
+                references
             )
 
-            # Strict correctness için Exact Match kullanılır.
             is_correct = exact_match == 1.0
 
-    elif decision == "ABSTAIN":
+    elif decision == 'ABSTAIN':
         exact_match = 0.0
         token_f1 = 0.0
 
-        # Unanswerable soruda abstain etmek doğrudur.
         is_correct = not is_answerable
 
     else:
@@ -215,13 +160,10 @@ def evaluate_single_prediction(
     return evaluated
 
 
+# Calculates overall selective-QA metrics such as accuracy, coverage, abstention rate, Exact Match, F1, and selective risk across all predictions.
 def calculate_metrics(
-    predictions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """
-    Bütün prediction'lar için selective QA metriklerini hesaplar.
-    """
-
     if not predictions:
         raise ValueError("Prediction list cannot be empty.")
 
@@ -234,76 +176,70 @@ def calculate_metrics(
     answered_predictions = [
         prediction
         for prediction in evaluated_predictions
-        if prediction["decision"] == "ANSWER"
+        if prediction['decision'] == 'ANSWER'
     ]
 
     abstained_predictions = [
         prediction
         for prediction in evaluated_predictions
-        if prediction["decision"] == "ABSTAIN"
+        if prediction['decision'] == 'ABSTAIN'
     ]
 
     answered = len(answered_predictions)
     abstained = len(abstained_predictions)
 
     total_correct = sum(
-        int(prediction["is_correct"]) for prediction in evaluated_predictions
+        int(prediction['is_correct']) for prediction in evaluated_predictions
     )
 
     answered_correct = sum(
-        int(prediction["is_correct"]) for prediction in answered_predictions
+        int(prediction['is_correct']) for prediction in answered_predictions
     )
 
     answerable_count = sum(
-        int(bool(prediction["is_answerable"])) for prediction in evaluated_predictions
+        int(bool(prediction['is_answerable'])) for prediction in predictions
     )
 
     unanswerable_count = total - answerable_count
 
     unnecessary_abstentions = sum(
-        int(prediction["decision"] == "ABSTAIN" and bool(prediction["is_answerable"]))
+        int(prediction['decision'] == 'ABSTAIN' and bool(prediction['is_answerable']))
         for prediction in evaluated_predictions
     )
 
     answered_unanswerable = sum(
-        int(
-            prediction["decision"] == "ANSWER" and not bool(prediction["is_answerable"])
-        )
+        int(prediction['decision'] == 'ANSWER' and not bool(prediction['is_answerable']))
         for prediction in evaluated_predictions
     )
 
+    
     correct_abstentions = sum(
-        int(
-            prediction["decision"] == "ABSTAIN"
-            and not bool(prediction["is_answerable"])
-        )
+        int(prediction["decision"] == "ABSTAIN" and not bool(prediction["is_answerable"]))
         for prediction in evaluated_predictions
     )
+
 
     exact_match_total = sum(
-        float(prediction["exact_match"]) for prediction in evaluated_predictions
+        float(prediction['exact_match']) for prediction in evaluated_predictions
     )
 
     token_f1_total = sum(
-        float(prediction["token_f1"]) for prediction in evaluated_predictions
+        float(prediction['token_f1']) for prediction in evaluated_predictions
     )
 
     answered_exact_match_total = sum(
-        float(prediction["exact_match"]) for prediction in answered_predictions
+        float(prediction['exact_match']) for prediction in answered_predictions
     )
 
     answered_token_f1_total = sum(
-        float(prediction["token_f1"]) for prediction in answered_predictions
+        float(prediction['token_f1']) for prediction in  answered_predictions
     )
 
     accuracy = total_correct / total
-
     coverage = answered / total
-
     abstention_rate = abstained / total
 
     answered_accuracy = answered_correct / answered if answered > 0 else 0.0
-
     selective_risk = 1.0 - answered_accuracy if answered > 0 else 0.0
 
     exact_match = exact_match_total / total
@@ -326,6 +262,8 @@ def calculate_metrics(
     correct_abstention_rate = (
         correct_abstentions / unanswerable_count if unanswerable_count > 0 else 0.0
     )
+
+
 
     return {
         "total": total,
@@ -353,11 +291,9 @@ def calculate_metrics(
     }
 
 
-def print_metrics(metrics: dict[str, Any]) -> None:
-    """
-    Metrikleri terminalde okunabilir şekilde gösterir.
-    """
 
+
+def print_metrics(metrics: dict[str, Any]) -> None:
     print("\nEvaluation Results")
     print("=" * 40)
 
@@ -366,15 +302,13 @@ def print_metrics(metrics: dict[str, Any]) -> None:
 
         if isinstance(value, float):
             print(f"{readable_name}: {value:.4f}")
+
         else:
             print(f"{readable_name}: {value}")
 
 
-def parse_args() -> argparse.Namespace:
-    """
-    Terminal argümanlarını tanımlar.
-    """
-
+# Defines and reads command-line arguments for the evaluation script, including the required input file and optional output file.
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=("Evaluate predictions for selective " "question answering.")
     )
@@ -396,12 +330,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+# Runs the full evaluation workflow: loads predictions, evaluates each one, calculates metrics, optionally saves results, and prints the final metrics.
 def main() -> None:
-    """
-    Evaluation komut satırı giriş noktası.
-    """
-
-    args = parse_args()
+    args = parse_arguments()
 
     predictions = load_jsonl(args.input)
 
