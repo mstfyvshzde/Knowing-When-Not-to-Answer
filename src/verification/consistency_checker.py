@@ -325,12 +325,12 @@ def run_consistencey_check(
 
 # To define and read command-line arguments for the consistency checker.
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.Namespace(
-        description=(
-            "Measure agreement among "
-            "verification signals."
-        )
+    parser = argparse.ArgumentParser(
+    description=(
+        "Measure agreement among "
+        "verification signals."
     )
+)
 
     parser.add_argument(
         '--input',
