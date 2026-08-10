@@ -1,52 +1,39 @@
 """
-Semantic evidence verifier based on Natural Language Inference.
-
-Bu verifier herhangi bir özel soru, cevap, kişi, sayı veya
-relation listesine bağlı değildir.
-
-İşlem:
-
-    Evidence / context
-            +
-    Question-answer hypothesis
-            ↓
-        NLI model
-            ↓
-    ENTAILMENT / NEUTRAL / CONTRADICTION
-
-Bu dosya lexical evidence verifier'ın yerine geçmez.
-Bağımsız bir semantic verification katmanı oluşturur.
+To check whether a predicted answer is semantically supported by the available evidence/context using an NLI model. It turns each question + predicted answer into a hypothesis, compares it with the evidence, and outputs ENTAILMENT, NEUTRAL, or CONTRADICTION with probabilities.
 """
 
-import argparse
+
+import argparse 
 from pathlib import Path
 from typing import Any
 
 import torch
+
+# AutoTokenizer -> converts text into tokens/numbers that the transformer model can understand.
+# AutoModelForSequenceClassification -> loads a transformer model that classifies text into labels/classes.
 from transformers import (
     AutoModelForSequenceClassification,
-    AutoTokenizer,
+    AutoTokenizer
 )
 
 from src.utils.io import (
     load_jsonl,
-    save_jsonl,
+    save_jsonl
 )
 
 DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_evidence.jsonl")
 
-DEFAULT_OUTPUT_PATH = Path(
-    "outputs/predictions/calibration_with_semantic_evidence.jsonl"
-)
+DEFAULT_OUTPUT_PATH = Path("outputs/predictions/calibration_with_semantic_evidence.jsonl")
 
+
+# This is the default Hugging Face model used for semantic/NLI classification.
 DEFAULT_MODEL_NAME = "FacebookAI/roberta-large-mnli"
 
 
-def get_predicted_answer(prediction: dict[str, Any]) -> str:
-    """
-    Prediction kaydındaki tahmin edilen cevabı çıkarır.
-    """
-
+# find and return the predicted answer text from a prediction dictionary, even if different files use different field names.
+def get_predicted_answer(
+    prediction: dict[str, Any]
+) -> str:
     answer_fields = (
         "predicted_answer",
         "prediction_text",
@@ -60,22 +47,16 @@ def get_predicted_answer(prediction: dict[str, Any]) -> str:
         if value is not None:
             return str(value).strip()
 
-    return ""
+    # If none of those fields exist, it returns:
+    return ''
 
 
+# To get the evidence text for a prediction.
 def get_evidence_text(prediction: dict[str, Any]) -> str:
-    """
-    Semantic verifier için kullanılacak evidence metnini seçer.
-
-    Öncelik:
-        1. Lexical verifier tarafından çıkarılan evidence_text
-        2. Tam context
-    """
-
     evidence_text = str(
         prediction.get(
-            "evidence_text",
-            "",
+            'evidence_text',
+            ''
         )
     ).strip()
 
@@ -84,71 +65,55 @@ def get_evidence_text(prediction: dict[str, Any]) -> str:
 
     return str(
         prediction.get(
-            "context",
-            "",
+            'context',
+            ''
         )
     ).strip()
 
 
+# To convert the question + predicted answer into a clear statement that the NLI model can evaluate.
 def build_qa_hypothesis(question: str, predicted_answer: str) -> str:
-    """
-    Question ve predicted answer'dan genel bir NLI
-    hypothesis oluşturur.
-
-    Bu fonksiyon soru türlerine veya belirli relation
-    kalıplarına özel kurallar kullanmaz.
-    """
-
     question = question.strip()
     predicted_answer = predicted_answer.strip()
 
     if not question or not predicted_answer:
-        return ""
+        return ''
 
     return f'The answer to the question "{question}" is "{predicted_answer}".'
 
 
+# To choose the best available hardware device for running the model
 def resolve_device() -> torch.device:
-    """
-    Kullanılabilecek en uygun PyTorch device'ı seçer.
-
-    Öncelik:
-        CUDA → Apple MPS → CPU
-    """
-
     if torch.cuda.is_available():
-        return torch.device("cuda")
+        return torch.device('cuda')
 
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return torch.device("mps")
 
-    return torch.device("cpu")
+    return torch.device('cpu')
 
 
+
+# To standardize model label names into a consistent format.
 def normalize_label_name(label: str) -> str:
-    """
-    Model label isimlerini ortak formata dönüştürür.
-    """
-
     normalized = str(label).upper().strip()
 
+    # The aliases dictionary also gives a place to map alternative label names later if needed.
     aliases = {
         "ENTAILMENT": "ENTAILMENT",
         "NEUTRAL": "NEUTRAL",
         "CONTRADICTION": "CONTRADICTION",
     }
 
+    # “Try to find normalized inside the aliases dictionary. If it exists, return the mapped value. If it does not exist, return normalized itself.”
     return aliases.get(
         normalized,
         normalized,
     )
 
 
+# To find the numeric ID that the NLI model uses for a specific label such as ENTAILMENT, NEUTRAL, or CONTRADICTION.
 def find_label_id(id_to_label: dict[int, str], target_label: str) -> int:
-    """
-    Model config içindeki target label'ın ID'sini bulur.
-    """
-
     target_label = target_label.upper()
 
     for label_id, label_name in id_to_label.items():
@@ -162,16 +127,14 @@ def find_label_id(id_to_label: dict[int, str], target_label: str) -> int:
     )
 
 
+# use an NLI model to compare evidence with a question-answer statement and classify the relationship as ENTAILMENT, NEUTRAL, or CONTRADICTION.
 class SemanticEvidenceVerifier:
-    """
-    NLI modelini yükleyen ve semantic evidence
-    doğrulaması yapan sınıf.
-    """
-
+    # loads the tokenizer/model, selects the device, and finds the label IDs.
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL_NAME,
-        max_length: int = 512,
+        # the tokenizer will use at most 512 tokens for each input pair.
+        max_length: int = 512
     ) -> None:
         self.model_name = model_name
         self.max_length = max_length
@@ -182,13 +145,14 @@ class SemanticEvidenceVerifier:
         print(f"Device: {self.device}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
-
+        # moves the model to the selected hardware: GPU, Apple MPS, or CPU.
         self.model.to(self.device)
-
+        # puts the model in prediction mode and disables training behaviors like dropout, making outputs more stable and consistent.
         self.model.eval()
 
+        # ets the model’s mapping from numeric class IDs to label names.
+        # Example: {0: "CONTRADICTION", 1: "NEUTRAL", 2: "ENTAILMENT"}
         raw_id_to_label = self.model.config.id2label
 
         self.id_to_label = {
@@ -196,31 +160,40 @@ class SemanticEvidenceVerifier:
             for label_id, label_name in raw_id_to_label.items()
         }
 
+
+        # These lines find and store the numeric class ID for each NLI label: ENTAILMENT, NEUTRAL, and CONTRADICTION.
+        # For example, if ENTAILMENT = 2, then self.entailment_id becomes 2, so later the code can read the correct probability from the model output.
         self.entailment_id = find_label_id(
             self.id_to_label,
-            "ENTAILMENT",
+            'ENTAILMENT'
         )
 
         self.neutral_id = find_label_id(
             self.id_to_label,
-            "NEUTRAL",
+            'NEUTRAL'
         )
 
         self.contradiction_id = find_label_id(
             self.id_to_label,
-            "CONTRADICTION",
+            'CONTRADICTION'
         )
 
+    # It processes many evidence–hypothesis pairs in batches, runs them through the NLI model, and returns ENTAILMENT, NEUTRAL, or CONTRADICTION probabilities plus the final semantic label.
     def predict_batch(
-        self,
+        self, 
+        # the evidence/context texts the model will check.
         premises: list[str],
+        # the statements built from the question + predicted answer that are tested against the premises.
         hypotheses: list[str],
-        batch_size: int = 8,
+        # process 8 premise–hypothesis pairs at a time.
+        batch_size: int = 8
     ) -> list[dict[str, Any]]:
-        """
-        Evidence-hypothesis çiftlerinde toplu NLI inference yapar.
-        """
-
+        # Example:
+        # premises = ["James Watt improved the steam engine."]
+        # hypotheses = ['The answer to the question "Who improved the steam engine?" is "James Watt".']
+        # Then the NLI model checks whether the hypothesis is supported by the premise. ✅
+        
+        
         if len(premises) != len(hypotheses):
             raise ValueError("Premises and hypotheses must have the same length.")
 
@@ -232,17 +205,15 @@ class SemanticEvidenceVerifier:
         for start_index in range(
             0,
             len(premises),
-            batch_size,
+            batch_size
         ):
             end_index = start_index + batch_size
-
-            premise_batch = premises[start_index:end_index]
-
-            hypothesis_batch = hypotheses[start_index:end_index]
+            premise_batch = premises[start_index: end_index]
+            hypothesis_batch = hypotheses[start_index: end_index]
 
             processed_end = min(
                 end_index,
-                len(premises),
+                len(premises)
             )
 
             print(
@@ -252,27 +223,36 @@ class SemanticEvidenceVerifier:
                 flush=True,
             )
 
+            # This part converts the text pairs into numeric tensors that the transformer model can understand.
             encoded_inputs = self.tokenizer(
                 premise_batch,
                 hypothesis_batch,
+                # makes sequences in the batch the same length
                 padding=True,
                 truncation=True,
+                # limits input length
                 max_length=self.max_length,
-                return_tensors="pt",
+                # returns PyTorch tensors
+                return_tensors='pt'
             )
 
+            # This part moves every tokenizer output tensor to the same device as the model — GPU, MPS, or CPU.
             encoded_inputs = {
                 key: value.to(self.device) for key, value in encoded_inputs.items()
             }
 
+            # This block runs the model on the encoded inputs without training and gets the raw prediction scores (logits).
             with torch.inference_mode():
+                # We use ** to unpack a dictionary into keyword arguments
                 outputs = self.model(**encoded_inputs)
 
                 probabilities = torch.softmax(
                     outputs.logits,
-                    dim=-1,
+                    dim=-1
                 )
 
+            # detach() → disconnects the probabilities from PyTorch’s computation graph, because we are not training.
+            # .cpu() → moves them from GPU/MPS back to the CPU so they are easier to process and convert to normal Python values.
             probabilities = probabilities.detach().cpu()
 
             for probability_vector in probabilities:
@@ -289,13 +269,14 @@ class SemanticEvidenceVerifier:
                 label_probabilities = {
                     "ENTAILMENT": (entailment_probability),
                     "NEUTRAL": (neutral_probability),
-                    "CONTRADICTION": (contradiction_probability),
+                    "CONTRADICTION": (contradiction_probability)
                 }
 
                 predicted_label = max(
                     label_probabilities,
-                    key=label_probabilities.get,
+                    key=label_probabilities.get
                 )
+
 
                 results.append(
                     {
@@ -303,32 +284,28 @@ class SemanticEvidenceVerifier:
                         "entailment_probability": (entailment_probability),
                         "neutral_probability": (neutral_probability),
                         "contradiction_probability": (contradiction_probability),
-                        "semantic_confidence": (label_probabilities[predicted_label]),
+                        "semantic_confidence": (label_probabilities[predicted_label])
                     }
                 )
 
         return results
 
 
+# To validate that every prediction has the minimum required data before semantic verification starts
 def validate_predictions(predictions: list[dict[str, Any]]) -> None:
-    """
-    Prediction kayıtlarının gerekli alanlarını kontrol eder.
-    """
-
-    if not predictions:
+    if not predictions: 
         raise ValueError("Prediction list cannot be empty.")
 
     for index, prediction in enumerate(
-        predictions,
-        start=1,
+        predictions, start=1
     ):
         missing_fields: list[str] = []
 
-        if "question" not in prediction:
-            missing_fields.append("question")
+        if 'question' not in prediction:
+            missing_fields.append('question')
 
-        if "context" not in prediction and "evidence_text" not in prediction:
-            missing_fields.append("context or evidence_text")
+        if 'context' not in prediction and 'evidence_text' not in prediction:
+            missing_fields.append('context and evidence_text')  
 
         has_answer = any(
             field in prediction
@@ -336,12 +313,12 @@ def validate_predictions(predictions: list[dict[str, Any]]) -> None:
                 "predicted_answer",
                 "prediction_text",
                 "prediction_answer",
-                "answer",
+                "answer"
             )
         )
 
         if not has_answer:
-            missing_fields.append("predicted answer")
+            missing_fields.append('predicted aswer')
 
         if missing_fields:
             raise ValueError(
@@ -352,55 +329,44 @@ def validate_predictions(predictions: list[dict[str, Any]]) -> None:
             )
 
 
+# To convert the raw predictions into two lists that the NLI model can process: premises and hypotheses. ✅
+# premises -> evidence/context
+# hypotheses -> question + predicted answer statemen
 def build_semantic_inputs(
-    predictions: list[dict[str, Any]],
-) -> tuple[
-    list[str],
-    list[str],
-]:
-    """
-    Tüm prediction kayıtları için premise ve
-    hypothesis listelerini oluşturur.
-    """
-
+    predictions: list[dict[str, Any]]
+) -> tuple[list[str], list[str]]:
     premises: list[str] = []
-    hypotheses: list[str] = []
+    hypotheses: list[str] =[]
 
     for prediction in predictions:
         question = str(
             prediction.get(
-                "question",
-                "",
+                'question',
+                ''
             )
         ).strip()
 
         predicted_answer = get_predicted_answer(prediction)
-
         evidence_text = get_evidence_text(prediction)
-
         hypothesis = build_qa_hypothesis(
             question=question,
-            predicted_answer=(predicted_answer),
+            predicted_answer=predicted_answer
         )
 
         premises.append(evidence_text)
-
         hypotheses.append(hypothesis)
 
     return premises, hypotheses
 
 
+# uns the complete semantic-verification pipeline on all predictions and saves the results.
 def run_semantic_verification(
     input_path: str | Path,
     output_path: str | Path,
     model_name: str,
     batch_size: int,
-    max_length: int,
+    max_length: int
 ) -> list[dict[str, Any]]:
-    """
-    Tüm predictions üzerinde semantic verification çalıştırır.
-    """
-
     predictions = load_jsonl(input_path)
 
     validate_predictions(predictions)
@@ -409,13 +375,13 @@ def run_semantic_verification(
 
     verifier = SemanticEvidenceVerifier(
         model_name=model_name,
-        max_length=max_length,
+        max_length=max_length
     )
 
     semantic_results = verifier.predict_batch(
         premises=premises,
         hypotheses=hypotheses,
-        batch_size=batch_size,
+        batch_size=batch_size
     )
 
     if len(semantic_results) != len(predictions):
@@ -432,14 +398,14 @@ def run_semantic_verification(
     for index, (
         prediction,
         hypothesis,
-        semantic_result,
+        semantic_result
     ) in enumerate(
         zip(
             predictions,
             hypotheses,
-            semantic_results,
+            semantic_results
         ),
-        start=1,
+        start=1
     ):
         updated_prediction = prediction.copy()
 
@@ -459,8 +425,7 @@ def run_semantic_verification(
 
         verified_predictions.append(updated_prediction)
 
-        semantic_label = semantic_result["semantic_label"]
-
+        semantic_label = semantic_result['semantic_label']
         label_counts[semantic_label] += 1
 
         print(
@@ -478,12 +443,12 @@ def run_semantic_verification(
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
     save_jsonl(
         verified_predictions,
-        output_path,
+        output_path
     )
 
     print("\nSemantic verification completed.")
@@ -499,6 +464,8 @@ def run_semantic_verification(
     return verified_predictions
 
 
+
+
 def parse_arguments() -> argparse.Namespace:
     """
     Command-line argümanlarını okur.
@@ -510,29 +477,29 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         "--input",
-        default=str(DEFAULT_INPUT_PATH),
+        default=str(DEFAULT_INPUT_PATH)
     )
 
     parser.add_argument(
         "--output",
-        default=str(DEFAULT_OUTPUT_PATH),
+        default=str(DEFAULT_OUTPUT_PATH)
     )
 
     parser.add_argument(
         "--model-name",
-        default=DEFAULT_MODEL_NAME,
+        default=DEFAULT_MODEL_NAME
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=4,
+        default=4
     )
 
     parser.add_argument(
         "--max-length",
         type=int,
-        default=512,
+        default=512
     )
 
     return parser.parse_args()
