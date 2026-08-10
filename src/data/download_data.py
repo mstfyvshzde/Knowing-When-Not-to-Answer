@@ -18,6 +18,7 @@ DATASET_NAME = "rajpurkar/squad_v2"
 OUTPUT_DIR = Path("data/raw/squad_v2")
 
 
+# Downloads the SQuAD v2 dataset, validates its structure, and saves it locally while protecting existing data from accidental overwriting.
 def download_dataset(
     overwrite: bool = False,  # overwrite=False means the function should not replace an existing dataset folder by default.
 ) -> DatasetDict:
