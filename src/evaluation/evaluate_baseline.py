@@ -1,5 +1,5 @@
 """
-
+Evaluates the raw QA baseline by measuring its prediction quality with metrics such as accuracy, Exact Match, F1, coverage, abstention rate, and selective risk, then saves the results.
 """
 
 import argparse
