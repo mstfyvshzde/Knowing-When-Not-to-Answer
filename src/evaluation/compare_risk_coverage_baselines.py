@@ -1,5 +1,6 @@
 """Compare confidence, hybrid, and random risk-coverage baselines."""
 
+# it makes type hints easier and safer to use.
 from __future__ import annotations
 
 import csv
@@ -20,8 +21,8 @@ OUTPUT_JSON_PATH = RISK_COVERAGE_DIR / "baseline_risk_coverage_comparison.json"
 TARGET_COVERAGES = tuple(index / 10 for index in range(1, 11))
 
 
+# Loads a JSON file, checks that the file exists and contains a JSON object/dictionary, then returns that data.
 def load_json(path: Path) -> dict[str, Any]:
-    """Load a JSON object from disk."""
     if not path.exists():
         raise FileNotFoundError(f"Required file not found: {path}")
 
@@ -34,8 +35,9 @@ def load_json(path: Path) -> dict[str, Any]:
     return data
 
 
+
+# Loads a risk–coverage curve from a CSV file, validates the required columns, converts values to floats, and sorts the points by coverage.
 def load_risk_coverage_curve(path: Path) -> list[dict[str, float]]:
-    """Load a risk-coverage curve CSV."""
     if not path.exists():
         raise FileNotFoundError(f"Required file not found: {path}")
 
@@ -49,7 +51,7 @@ def load_risk_coverage_curve(path: Path) -> list[dict[str, float]]:
             "coverage",
             "selective_accuracy",
             "selective_risk",
-            "minimum_score",
+            "minimum_score"
         }
 
         if reader.fieldnames is None:
@@ -68,7 +70,7 @@ def load_risk_coverage_curve(path: Path) -> list[dict[str, float]]:
                     "coverage": float(row["coverage"]),
                     "selective_accuracy": float(row["selective_accuracy"]),
                     "selective_risk": float(row["selective_risk"]),
-                    "minimum_score": float(row["minimum_score"]),
+                    "minimum_score": float(row["minimum_score"])
                 }
             )
 
@@ -78,24 +80,26 @@ def load_risk_coverage_curve(path: Path) -> list[dict[str, float]]:
     return sorted(rows, key=lambda row: row["coverage"])
 
 
+
+# Finds and returns the curve point whose coverage is closest to the target coverage.
 def nearest_curve_point(
     curve: list[dict[str, float]],
-    target_coverage: float,
+    target_coverage: float
 ) -> dict[str, float]:
-    """Return the curve point nearest to the requested coverage."""
     return min(
         curve,
         key=lambda row: (
             abs(row["coverage"] - target_coverage),
-            row["coverage"],
-        ),
+            row["coverage"]
+        )
     )
 
 
+
+# Loads random-baseline evaluation results from JSON, validates their structure, and organizes each coverage level with its accuracy, risk, variability, and seed statistics.
 def load_random_results(
-    path: Path,
+    path: Path
 ) -> dict[float, dict[str, float]]:
-    """Load random-abstention summaries indexed by coverage."""
     data = load_json(path)
     raw_results = data.get("results")
 
@@ -124,14 +128,15 @@ def load_random_results(
             "risk_std": float(summary["selective_risk_std"]),
             "minimum_risk": float(summary["min_selective_risk"]),
             "maximum_risk": float(summary["max_selective_risk"]),
-            "number_of_seeds": float(summary["number_of_seeds"]),
+            "number_of_seeds": float(summary["number_of_seeds"])
         }
 
     return results
 
 
+# Calculates the area under a curve using the trapezoidal rule by summing the areas between neighboring points.
+# trapezoidal_area is a function that approximates the area under a curve by splitting it into small trapezoids and adding their areas together.
 def trapezoidal_area(points: list[tuple[float, float]]) -> float:
-    """Compute area under a curve using the trapezoidal rule."""
     ordered_points = sorted(points)
 
     area = 0.0
@@ -147,22 +152,22 @@ def trapezoidal_area(points: list[tuple[float, float]]) -> float:
     return area
 
 
+# Builds a comparison table for confidence-only, hybrid, and random baselines at the same target coverage levels.
 def build_comparison_rows(
     confidence_curve: list[dict[str, float]],
     hybrid_curve: list[dict[str, float]],
-    random_results: dict[float, dict[str, float]],
+    random_results: dict[float, dict[str, float]]
 ) -> list[dict[str, float]]:
-    """Build matched-coverage comparison rows."""
     comparison_rows: list[dict[str, float]] = []
 
     for target_coverage in TARGET_COVERAGES:
         confidence = nearest_curve_point(
             confidence_curve,
-            target_coverage,
+            target_coverage
         )
         hybrid = nearest_curve_point(
             hybrid_curve,
-            target_coverage,
+            target_coverage
         )
 
         random_key = round(target_coverage, 10)
@@ -197,18 +202,18 @@ def build_comparison_rows(
                 ),
                 "hybrid_minus_confidence_risk": (
                     hybrid["selective_risk"] - confidence["selective_risk"]
-                ),
+                )
             }
         )
 
     return comparison_rows
 
 
+# Writes comparison results to a CSV file, creating the folder first and using dictionary keys as column headers.
 def write_csv(
     path: Path,
-    rows: list[dict[str, float]],
+    rows: list[dict[str, float]]
 ) -> None:
-    """Write comparison rows to CSV."""
     if not rows:
         raise ValueError("Cannot write an empty comparison CSV")
 
@@ -217,24 +222,24 @@ def write_csv(
     with path.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(
             file,
-            fieldnames=list(rows[0].keys()),
+            fieldnames=list(rows[0].keys())
         )
         writer.writeheader()
         writer.writerows(rows)
 
 
+# Builds the final comparison summary by calculating random-baseline AURC, comparing AURC across confidence/hybrid/random methods, and finding the lowest-risk method at each target coverage.
 def build_output_summary(
     rows: list[dict[str, float]],
     risk_coverage_summary: dict[str, Any],
-    random_results: dict[float, dict[str, float]],
+    random_results: dict[float, dict[str, float]]
 ) -> dict[str, Any]:
-    """Build the JSON comparison summary."""
     random_points = [(0.0, 0.0)]
 
     random_points.extend(
         (
             result["coverage"],
-            result["selective_risk"],
+            result["selective_risk"]
         )
         for _, result in sorted(random_results.items())
     )
@@ -250,7 +255,7 @@ def build_output_summary(
         risks = {
             "confidence": row["confidence_risk"],
             "hybrid": row["hybrid_risk"],
-            "random": row["random_mean_risk"],
+            "random": row["random_mean_risk"]
         }
 
         best_method = min(risks, key=risks.get)
@@ -259,19 +264,19 @@ def build_output_summary(
             {
                 "coverage": row["target_coverage"],
                 "best_method": best_method,
-                "lowest_risk": risks[best_method],
+                "lowest_risk": risks[best_method]
             }
         )
 
     aurc_values = {
         "confidence": confidence_aurc,
         "hybrid": hybrid_aurc,
-        "random": random_aurc,
+        "random": random_aurc
     }
 
     best_aurc_method = min(
         aurc_values,
-        key=aurc_values.get,
+        key=aurc_values.get
     )
 
     return {
@@ -279,7 +284,7 @@ def build_output_summary(
             "confidence_curve": str(CONFIDENCE_CURVE_PATH),
             "hybrid_curve": str(HYBRID_CURVE_PATH),
             "risk_coverage_summary": str(RISK_COVERAGE_SUMMARY_PATH),
-            "random_results": str(RANDOM_RESULTS_PATH),
+            "random_results": str(RANDOM_RESULTS_PATH)
         },
         "total_predictions": risk_coverage_summary.get("total_predictions"),
         "target_coverages": list(TARGET_COVERAGES),
@@ -294,12 +299,12 @@ def build_output_summary(
             "hybrid": random_aurc - hybrid_aurc,
         },
         "best_method_by_coverage": best_method_by_coverage,
-        "comparison_rows": rows,
+        "comparison_rows": rows
     }
 
 
+
 def main() -> None:
-    """Run the baseline comparison."""
     confidence_curve = load_risk_coverage_curve(CONFIDENCE_CURVE_PATH)
     hybrid_curve = load_risk_coverage_curve(HYBRID_CURVE_PATH)
     random_results = load_random_results(RANDOM_RESULTS_PATH)
