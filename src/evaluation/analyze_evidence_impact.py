@@ -1,20 +1,5 @@
 """
-Analyze the impact of evidence verification on selective QA decisions.
 
-This module compares:
-
-1. Confidence-only threshold decisions.
-2. Final evidence-aware decisions.
-3. Accuracy for each evidence support label.
-4. Decision transitions such as:
-       ANSWER -> ANSWER
-       ANSWER -> VERIFY
-       ANSWER -> ABSTAIN
-5. Correct predictions that were downgraded by evidence verification.
-6. Incorrect predictions that were successfully blocked.
-
-The goal is to understand whether the evidence verifier improves
-or harms the selective QA policy.
 """
 
 import argparse
@@ -46,15 +31,10 @@ VALID_EVIDENCE_LABELS = {
     "UNSUPPORTED",
 }
 
-
+# accept different True/False formats -> normalize them -> return True or False; invalid values raise an error.
 def normalize_boolean(
     value: Any,
 ) -> bool:
-    """
-    Convert common boolean representations into
-    a Python boolean.
-    """
-
     if isinstance(value, bool):
         return value
 
@@ -79,14 +59,14 @@ def normalize_boolean(
             "true",
             "1",
             "correct",
-            "yes",
+            "yes"
         }
 
         false_values = {
             "false",
             "0",
             "incorrect",
-            "no",
+            "no"
         }
 
         if normalized_value in true_values:
@@ -98,13 +78,11 @@ def normalize_boolean(
     raise ValueError(f"Could not convert value to boolean: {value!r}")
 
 
-def normalize_answer(
-    text: Any,
-) -> str:
-    """
-    Apply SQuAD-style answer normalization.
-    """
 
+# Normalizes answer text by converting it to lowercase, removing punctuation and articles, and cleaning extra spaces.
+def normalize_answer(
+    text: Any
+) -> str:
     normalized_text = str(text or "").lower()
 
     normalized_text = "".join(
@@ -124,17 +102,13 @@ def normalize_answer(
     return normalized_text
 
 
+# read reference_answers -> handle string, dict, list, or mixed formats -> extract the actual answer text -> return list[str]
 def extract_reference_answers(
     prediction: dict[str, Any],
 ) -> list[str]:
-    """
-    Extract reference answers from different possible
-    JSON structures.
-    """
-
     reference_answers = prediction.get(
         "reference_answers",
-        [],
+        []
     )
 
     if reference_answers is None:
@@ -142,18 +116,18 @@ def extract_reference_answers(
 
     if isinstance(
         reference_answers,
-        str,
+        str
     ):
         return [reference_answers]
 
     if isinstance(
         reference_answers,
-        dict,
+        dict
     ):
         possible_fields = (
             "text",
             "answers",
-            "answer_text",
+            "answer_text"
         )
 
         for field in possible_fields:
@@ -164,20 +138,20 @@ def extract_reference_answers(
 
             if isinstance(
                 values,
-                str,
+                str
             ):
                 return [values]
 
             if isinstance(
                 values,
-                list,
+                list
             ):
                 extracted_answers: list[str] = []
 
                 for value in values:
                     if isinstance(
                         value,
-                        dict,
+                        dict
                     ):
                         answer_text = (
                             value.get("text")
@@ -197,20 +171,20 @@ def extract_reference_answers(
 
     if isinstance(
         reference_answers,
-        list,
+        list
     ):
         extracted_answers = []
 
         for item in reference_answers:
             if isinstance(
                 item,
-                str,
+                str
             ):
                 extracted_answers.append(item)
 
             elif isinstance(
                 item,
-                dict,
+                dict
             ):
                 answer_text = (
                     item.get("text") or item.get("answer") or item.get("answer_text")
@@ -227,22 +201,17 @@ def extract_reference_answers(
     return [str(reference_answers)]
 
 
+
+# use is_correct / exact_match if available -> otherwise compare the predicted answer with gold answers -> handle unanswerable questions correctly.
 def get_correctness(
-    prediction: dict[str, Any],
+    prediction: dict[str, Any]
 ) -> bool:
-    """
-    Determine prediction correctness.
-
-    Existing correctness fields are used first.
-    Otherwise normalized Exact Match is calculated.
-    """
-
     possible_fields = (
         "is_correct",
         "correct",
         "prediction_correct",
         "exact_match",
-        "em",
+        "em"
     )
 
     for field in possible_fields:
@@ -253,20 +222,20 @@ def get_correctness(
 
         if field in {
             "exact_match",
-            "em",
+            "em"
         }:
             try:
                 numeric_value = float(value)
 
             except (
                 TypeError,
-                ValueError,
+                ValueError
             ):
                 return normalize_boolean(value)
 
             return numeric_value in {
                 1.0,
-                100.0,
+                100.0
             }
 
         return normalize_boolean(value)
@@ -274,7 +243,7 @@ def get_correctness(
     prediction_text = normalize_answer(
         prediction.get(
             "prediction_text",
-            "",
+            ""
         )
     )
 
@@ -292,7 +261,7 @@ def get_correctness(
 
     is_answerable_value = prediction.get(
         "is_answerable",
-        True,
+        True
     )
 
     try:
@@ -314,17 +283,14 @@ def get_correctness(
     return prediction_text in normalized_references
 
 
+# check possible decision fields -> clean the value -> if it is a valid decision, return it; otherwise raise an error.
 def get_threshold_decision(
-    prediction: dict[str, Any],
+    prediction: dict[str, Any]
 ) -> str:
-    """
-    Read the confidence-only threshold decision.
-    """
-
     possible_fields = (
         "threshold_decision",
         "confidence_decision",
-        "selective_decision",
+        "selective_decision"
     )
 
     for field in possible_fields:
@@ -341,13 +307,11 @@ def get_threshold_decision(
     raise ValueError("Prediction does not contain a valid threshold decision.")
 
 
-def get_final_decision(
-    prediction: dict[str, Any],
-) -> str:
-    """
-    Read the final evidence-aware decision.
-    """
 
+# get final_decision -> clean it -> check it is valid -> return it
+def get_final_decision(
+    prediction: dict[str, Any]
+) -> str:
     value = prediction.get("final_decision")
 
     if value is None:
@@ -361,13 +325,11 @@ def get_final_decision(
     return decision
 
 
-def get_evidence_support(
-    prediction: dict[str, Any],
-) -> str:
-    """
-    Read the evidence support label.
-    """
 
+# get evidence_support -> clean it -> check that it is one of the valid evidence labels -> return it.
+def get_evidence_support(
+    prediction: dict[str, Any]
+) -> str:
     value = prediction.get("evidence_support")
 
     if value is None:
@@ -381,14 +343,11 @@ def get_evidence_support(
     return evidence_support
 
 
+# read field -> try converting to float -> if missing or invalid, return None
 def get_numeric_value(
     prediction: dict[str, Any],
-    field: str,
+    field: str
 ) -> float | None:
-    """
-    Safely read an optional numeric field.
-    """
-
     value = prediction.get(field)
 
     if value is None:
@@ -399,49 +358,42 @@ def get_numeric_value(
 
     except (
         TypeError,
-        ValueError,
+        ValueError
     ):
         return None
 
 
+
+# if denominator = 0 -> return None; otherwise -> return the division result as float.
 def safe_divide(
     numerator: float,
-    denominator: float,
+    denominator: float
 ) -> float | None:
-    """
-    Safely divide two values.
-    """
-
     if denominator == 0:
         return None
 
     return float(numerator / denominator)
 
 
+
+# take a group of predictions -> count correct/incorrect cases -> calculate accuracy -> compute average numeric signals like confidence and evidence scores.
 def calculate_group_metrics(
     predictions: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """
-    Calculate count, accuracy and average scores
-    for a group of predictions.
-    """
-
     count = len(predictions)
-
     correct_count = sum(int(get_correctness(prediction)) for prediction in predictions)
-
     incorrect_count = count - correct_count
 
     accuracy = safe_divide(
         correct_count,
-        count,
+        count
     )
 
     numeric_fields = (
         "calibrated_confidence",
         "evidence_score",
         "answer_context_score",
-        "question_evidence_overlap",
+        "question_evidence_overlap"
     )
 
     averages: dict[str, float | None] = {}
@@ -453,7 +405,7 @@ def calculate_group_metrics(
             if (
                 value := get_numeric_value(
                     prediction,
-                    field,
+                    field
                 )
             )
             is not None
@@ -466,364 +418,530 @@ def calculate_group_metrics(
         "correct_count": correct_count,
         "incorrect_count": incorrect_count,
         "accuracy": accuracy,
-        **averages,
+        **averages
     }
 
 
+# combine the original threshold decision and final decision into one transition name.
+# Example: "ANSWER" + "ABSTAIN" → "ANSWER_TO_ABSTAIN"
 def build_transition_name(
     threshold_decision: str,
-    final_decision: str,
+    final_decision: str
 ) -> str:
-    """
-    Create a transition name such as
-    ANSWER_TO_VERIFY.
-    """
-
     return f"{threshold_decision}_TO_{final_decision}"
 
 
+
+# compare threshold decision + final decision + correctness => assign a human-readable case label.
 def classify_case(
     threshold_decision: str,
     final_decision: str,
-    is_correct: bool,
+    is_correct: bool
 ) -> str:
-    """
-    Assign a diagnostic category to each prediction.
-    """
+    if threshold_decision == "VERIFY" and final_decision == "ANSWER" and is_correct:
+        return "verify_correct_promoted_to_answer"
 
-    if threshold_decision == "ANSWER" and final_decision == "ANSWER" and is_correct:
-        return "correct_answer_preserved"
+    if threshold_decision == "VERIFY" and final_decision == "ANSWER" and not is_correct:
+        return "verify_incorrect_promoted_to_answer"
 
-    if threshold_decision == "ANSWER" and final_decision == "ANSWER" and not is_correct:
-        return "incorrect_answer_not_blocked"
+    if threshold_decision == "VERIFY" and final_decision == "ABSTAIN" and is_correct:
+        return "verify_correct_blocked"
 
-    if threshold_decision == "ANSWER" and final_decision == "VERIFY" and is_correct:
-        return "correct_answer_sent_to_verify"
+    if threshold_decision == "VERIFY" and final_decision == "ABSTAIN" and not is_correct:
+        return "verify_incorrect_blocked"
 
-    if threshold_decision == "ANSWER" and final_decision == "VERIFY" and not is_correct:
-        return "incorrect_answer_sent_to_verify"
+    if threshold_decision == "VERIFY" and final_decision == "VERIFY" and is_correct:
+        return "verify_correct_preserved"
 
-    if threshold_decision == "ANSWER" and final_decision == "ABSTAIN" and is_correct:
-        return "correct_answer_blocked"
-
-    if (
-        threshold_decision == "ANSWER"
-        and final_decision == "ABSTAIN"
-        and not is_correct
-    ):
-        return "incorrect_answer_blocked"
-
-    if threshold_decision == "VERIFY" and final_decision == "ABSTAIN":
-        return "verify_prediction_blocked"
-
-    if threshold_decision == "VERIFY" and final_decision == "VERIFY":
-        return "verify_prediction_preserved"
-
-    if threshold_decision == "ABSTAIN" and final_decision == "ABSTAIN":
-        return "abstention_preserved"
+    if threshold_decision == "VERIFY" and final_decision == "VERIFY" and not is_correct:
+        return "verify_incorrect_preserved"
 
     return "other_transition"
 
 
+
+# compare threshold decision vs final decision -> classify what happened to each prediction -> group similar cases -> calculate metrics → measure whether evidence verification blocks wrong answers without rejecting too many correct ones.
 def analyze_predictions(
-    predictions: list[dict[str, Any]],
+    predictions: list[dict[str, Any]]
 ) -> tuple[
     dict[str, Any],
-    list[dict[str, Any]],
+    list[dict[str, Any]]
 ]:
-    """
-    Analyze evidence verification impact.
-    """
-
     if not predictions:
-        raise ValueError("Prediction list cannot be empty.")
+        raise ValueError(
+            "Prediction list cannot be empty."
+        )
 
     transition_groups: dict[
         str,
-        list[dict[str, Any]],
+        list[dict[str, Any]]
     ] = defaultdict(list)
 
     evidence_groups: dict[
         str,
-        list[dict[str, Any]],
+        list[dict[str, Any]]
     ] = defaultdict(list)
 
     diagnostic_groups: dict[
         str,
-        list[dict[str, Any]],
+        list[dict[str, Any]]
     ] = defaultdict(list)
 
     analyzed_cases: list[dict[str, Any]] = []
 
     for index, prediction in enumerate(
         predictions,
-        start=1,
+        start=1
     ):
         try:
-            threshold_decision = get_threshold_decision(prediction)
+            threshold_decision = (
+                get_threshold_decision(prediction)
+            )
 
-            final_decision = get_final_decision(prediction)
+            final_decision = (
+                get_final_decision(prediction)
+            )
 
-            evidence_support = get_evidence_support(prediction)
+            evidence_support = (
+                get_evidence_support(prediction)
+            )
 
             is_correct = get_correctness(prediction)
 
         except ValueError as error:
-            raise ValueError(f"Prediction {index} failed analysis: {error}") from error
+            raise ValueError(
+                f"Prediction {index} failed analysis: "
+                f"{error}"
+            ) from error
 
         transition = build_transition_name(
             threshold_decision,
-            final_decision,
+            final_decision
         )
 
         diagnostic_category = classify_case(
-            threshold_decision=(threshold_decision),
-            final_decision=(final_decision),
-            is_correct=is_correct,
+            threshold_decision=threshold_decision,
+            final_decision=final_decision,
+            is_correct=is_correct
         )
 
-        transition_groups[transition].append(prediction)
+        transition_groups[
+            transition
+        ].append(prediction)
 
-        evidence_groups[evidence_support].append(prediction)
+        evidence_groups[
+            evidence_support
+        ].append(prediction)
 
-        diagnostic_groups[diagnostic_category].append(prediction)
+        diagnostic_groups[
+            diagnostic_category
+        ].append(prediction)
 
         analyzed_case = {
             "id": prediction.get("id"),
             "question": prediction.get("question"),
-            "prediction_text": (prediction.get("prediction_text")),
-            "reference_answers": (extract_reference_answers(prediction)),
-            "is_answerable": (prediction.get("is_answerable")),
+            "prediction_text": prediction.get(
+                "prediction_text"
+            ),
+            "reference_answers": (
+                extract_reference_answers(prediction)
+            ),
+            "is_answerable": prediction.get(
+                "is_answerable"
+            ),
             "is_correct": is_correct,
             "calibrated_confidence": (
                 get_numeric_value(
                     prediction,
-                    "calibrated_confidence",
+                    "calibrated_confidence"
                 )
             ),
             "evidence_score": (
                 get_numeric_value(
                     prediction,
-                    "evidence_score",
+                    "evidence_score"
                 )
             ),
             "answer_context_score": (
                 get_numeric_value(
                     prediction,
-                    "answer_context_score",
+                    "answer_context_score"
                 )
             ),
             "question_evidence_overlap": (
                 get_numeric_value(
                     prediction,
-                    "question_evidence_overlap",
+                    "question_evidence_overlap"
                 )
             ),
-            "evidence_support": (evidence_support),
-            "threshold_decision": (threshold_decision),
-            "final_decision": (final_decision),
-            "decision_reason": (prediction.get("decision_reason")),
+            "evidence_support": evidence_support,
+            "threshold_decision": (
+                threshold_decision
+            ),
+            "final_decision": final_decision,
+            "decision_reason": prediction.get(
+                "decision_reason"
+            ),
             "transition": transition,
-            "diagnostic_category": (diagnostic_category),
-            "evidence_text": (prediction.get("evidence_text")),
+            "diagnostic_category": (
+                diagnostic_category
+            ),
+            "evidence_text": prediction.get(
+                "evidence_text"
+            )
         }
 
         analyzed_cases.append(analyzed_case)
 
     transition_metrics = {
-        transition: (calculate_group_metrics(group_predictions))
-        for transition, group_predictions in sorted(transition_groups.items())
+        transition: calculate_group_metrics(
+            group_predictions
+        )
+        for transition, group_predictions
+        in sorted(transition_groups.items())
     }
 
     evidence_metrics = {
-        evidence_label: (calculate_group_metrics(group_predictions))
-        for evidence_label, group_predictions in sorted(evidence_groups.items())
+        evidence_label: calculate_group_metrics(
+            group_predictions
+        )
+        for evidence_label, group_predictions
+        in sorted(evidence_groups.items())
     }
 
     diagnostic_metrics = {
-        category: (calculate_group_metrics(group_predictions))
-        for category, group_predictions in sorted(diagnostic_groups.items())
+        category: calculate_group_metrics(
+            group_predictions
+        )
+        for category, group_predictions
+        in sorted(diagnostic_groups.items())
     }
 
     threshold_answer_predictions = [
         prediction
         for prediction in predictions
-        if get_threshold_decision(prediction) == "ANSWER"
+        if get_threshold_decision(prediction)
+        == "ANSWER"
     ]
 
     final_answer_predictions = [
         prediction
         for prediction in predictions
-        if get_final_decision(prediction) == "ANSWER"
+        if get_final_decision(prediction)
+        == "ANSWER"
     ]
 
-    threshold_answer_metrics = calculate_group_metrics(threshold_answer_predictions)
+    threshold_verify_predictions = [
+        prediction
+        for prediction in predictions
+        if get_threshold_decision(prediction)
+        == "VERIFY"
+    ]
 
-    final_answer_metrics = calculate_group_metrics(final_answer_predictions)
+    threshold_answer_metrics = (
+        calculate_group_metrics(
+            threshold_answer_predictions
+        )
+    )
 
-    correct_downgraded_count = sum(
+    final_answer_metrics = (
+        calculate_group_metrics(
+            final_answer_predictions
+        )
+    )
+
+    threshold_verify_metrics = (
+        calculate_group_metrics(
+            threshold_verify_predictions
+        )
+    )
+
+    verify_correct_promoted_count = sum(
         1
         for case in analyzed_cases
         if case["diagnostic_category"]
-        in {
-            "correct_answer_sent_to_verify",
-            "correct_answer_blocked",
-        }
+        == "verify_correct_promoted_to_answer"
     )
 
-    incorrect_blocked_count = sum(
+    verify_incorrect_promoted_count = sum(
         1
         for case in analyzed_cases
-        if case["diagnostic_category"] == "incorrect_answer_blocked"
+        if case["diagnostic_category"]
+        == "verify_incorrect_promoted_to_answer"
     )
 
-    incorrect_sent_to_verify_count = sum(
+    verify_correct_blocked_count = sum(
         1
         for case in analyzed_cases
-        if case["diagnostic_category"] == ("incorrect_answer_sent_to_verify")
+        if case["diagnostic_category"]
+        == "verify_correct_blocked"
     )
 
-    incorrect_intercepted_count = (
-        incorrect_blocked_count + incorrect_sent_to_verify_count
+    verify_incorrect_blocked_count = sum(
+        1
+        for case in analyzed_cases
+        if case["diagnostic_category"]
+        == "verify_incorrect_blocked"
     )
 
-    threshold_answer_correct_count = threshold_answer_metrics["correct_count"]
-
-    threshold_answer_incorrect_count = threshold_answer_metrics["incorrect_count"]
-
-    correct_downgrade_rate = safe_divide(
-        correct_downgraded_count,
-        threshold_answer_correct_count,
+    verify_correct_preserved_count = sum(
+        1
+        for case in analyzed_cases
+        if case["diagnostic_category"]
+        == "verify_correct_preserved"
     )
 
-    incorrect_interception_rate = safe_divide(
-        incorrect_intercepted_count,
-        threshold_answer_incorrect_count,
+    verify_incorrect_preserved_count = sum(
+        1
+        for case in analyzed_cases
+        if case["diagnostic_category"]
+        == "verify_incorrect_preserved"
     )
 
     summary = {
         "total_predictions": len(predictions),
-        "threshold_answer_policy": (threshold_answer_metrics),
-        "final_answer_policy": (final_answer_metrics),
-        "evidence_label_metrics": (evidence_metrics),
-        "transition_metrics": (transition_metrics),
-        "diagnostic_metrics": (diagnostic_metrics),
-        "evidence_impact_summary": {
-            "correct_answers_downgraded": (correct_downgraded_count),
-            "incorrect_answers_blocked": (incorrect_blocked_count),
-            "incorrect_answers_sent_to_verify": (incorrect_sent_to_verify_count),
-            "incorrect_answers_intercepted": (incorrect_intercepted_count),
-            "correct_downgrade_rate": (correct_downgrade_rate),
-            "incorrect_interception_rate": (incorrect_interception_rate),
-        },
-        "diagnostic_category_counts": dict(
-            Counter(case["diagnostic_category"] for case in analyzed_cases)
+
+        "threshold_answer_policy": (
+            threshold_answer_metrics
         ),
+
+        "threshold_verify_policy": (
+            threshold_verify_metrics
+        ),
+
+        "final_answer_policy": (
+            final_answer_metrics
+        ),
+
+        "evidence_label_metrics": (
+            evidence_metrics
+        ),
+
+        "transition_metrics": (
+            transition_metrics
+        ),
+
+        "diagnostic_metrics": (
+            diagnostic_metrics
+        ),
+
+        "evidence_impact_summary": {
+            "verify_predictions": len(
+                threshold_verify_predictions
+            ),
+            "verify_correct_promoted_to_answer": (
+                verify_correct_promoted_count
+            ),
+            "verify_incorrect_promoted_to_answer": (
+                verify_incorrect_promoted_count
+            ),
+            "verify_correct_blocked": (
+                verify_correct_blocked_count
+            ),
+            "verify_incorrect_blocked": (
+                verify_incorrect_blocked_count
+            ),
+            "verify_correct_preserved": (
+                verify_correct_preserved_count
+            ),
+            "verify_incorrect_preserved": (
+                verify_incorrect_preserved_count
+            )
+        },
+
+        "diagnostic_category_counts": dict(
+            Counter(
+                case["diagnostic_category"]
+                for case in analyzed_cases
+            )
+        )
     }
 
     return (
         summary,
-        analyzed_cases,
+        analyzed_cases
     )
 
-
+# Saves a dictionary as a formatted JSON file, creating the output directory first if necessary.
 def save_json(
     data: dict[str, Any],
-    output_path: str | Path,
+    output_path: str | Path
 ) -> None:
-    """
-    Save JSON data.
-    """
-
     output_path = Path(output_path)
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
     with output_path.open(
         "w",
-        encoding="utf-8",
+        encoding="utf-8"
     ) as file:
         json.dump(
             data,
             file,
             indent=2,
-            ensure_ascii=False,
+            ensure_ascii=False
         )
 
 
-def format_metric(
-    value: float | None,
-) -> str:
-    """
-    Format an optional metric.
-    """
 
+# None -> "N/A"; number -> formatted like 0.8472.
+def format_metric(
+    value: float | None
+) -> str:
     if value is None:
         return "N/A"
 
     return f"{value:.4f}"
 
 
+
+# take the analysis results -> compare confidence-only vs evidence-aware policy -> show how many wrong answers were blocked/verified, how many correct answers were downgraded, and print evidence/transition metrics.
 def print_summary(
-    analysis: dict[str, Any],
+    analysis: dict[str, Any]
 ) -> None:
-    """
-    Print the main evidence impact results.
-    """
+    impact = analysis[
+        "evidence_impact_summary"
+    ]
 
-    impact = analysis["evidence_impact_summary"]
+    threshold_policy = analysis[
+        "threshold_answer_policy"
+    ]
 
-    threshold_policy = analysis["threshold_answer_policy"]
+    threshold_verify_policy = analysis[
+        "threshold_verify_policy"
+    ]
 
-    final_policy = analysis["final_answer_policy"]
-
-    print("\nEvidence impact analysis completed.")
-
-    print(f"Total predictions: {analysis['total_predictions']}")
-
-    print("\nConfidence-only ANSWER policy:")
-
-    print(f"Answer count: {threshold_policy['count']}")
-
-    print(f"Answer accuracy: {format_metric(threshold_policy['accuracy'])}")
-
-    print("\nEvidence-aware ANSWER policy:")
-
-    print(f"Answer count: {final_policy['count']}")
-
-    print(f"Answer accuracy: {format_metric(final_policy['accuracy'])}")
-
-    print("\nEvidence impact:")
-
-    print(f"Correct answers downgraded: {impact['correct_answers_downgraded']}")
-
-    print(f"Incorrect answers blocked: {impact['incorrect_answers_blocked']}")
+    final_policy = analysis[
+        "final_answer_policy"
+    ]
 
     print(
-        "Incorrect answers sent to VERIFY: "
-        f"{impact['incorrect_answers_sent_to_verify']}"
+        "\nEvidence impact analysis completed."
     )
-
-    print(f"Correct downgrade rate: {format_metric(impact['correct_downgrade_rate'])}")
 
     print(
-        "Incorrect interception rate: "
-        f"{format_metric(impact['incorrect_interception_rate'])}"
+        f"Total predictions: "
+        f"{analysis['total_predictions']}"
     )
 
-    print("\nEvidence label accuracy:")
+    print(
+        "\nConfidence-only ANSWER policy:"
+    )
 
-    evidence_metrics = analysis["evidence_label_metrics"]
+    print(
+        f"Answer count: "
+        f"{threshold_policy['count']}"
+    )
+
+    print(
+        "Answer accuracy: "
+        f"{format_metric(
+            threshold_policy['accuracy']
+        )}"
+    )
+
+    print(
+        "\nThreshold VERIFY region:"
+    )
+
+    print(
+        f"VERIFY count: "
+        f"{threshold_verify_policy['count']}"
+    )
+
+    print(
+        "VERIFY-region accuracy: "
+        f"{format_metric(
+            threshold_verify_policy['accuracy']
+        )}"
+    )
+
+    print(
+        "\nEvidence-aware ANSWER policy:"
+    )
+
+    print(
+        f"Answer count: "
+        f"{final_policy['count']}"
+    )
+
+    print(
+        "Answer accuracy: "
+        f"{format_metric(
+            final_policy['accuracy']
+        )}"
+    )
+
+    print(
+        "\nEvidence impact on VERIFY predictions:"
+    )
+
+    print(
+        f"VERIFY predictions: "
+        f"{impact['verify_predictions']}"
+    )
+
+    print(
+        "Correct VERIFY promoted to ANSWER: "
+        f"{impact[
+            'verify_correct_promoted_to_answer'
+        ]}"
+    )
+
+    print(
+        "Incorrect VERIFY promoted to ANSWER: "
+        f"{impact[
+            'verify_incorrect_promoted_to_answer'
+        ]}"
+    )
+
+    print(
+        "Correct VERIFY blocked: "
+        f"{impact[
+            'verify_correct_blocked'
+        ]}"
+    )
+
+    print(
+        "Incorrect VERIFY blocked: "
+        f"{impact[
+            'verify_incorrect_blocked'
+        ]}"
+    )
+
+    print(
+        "Correct VERIFY preserved: "
+        f"{impact[
+            'verify_correct_preserved'
+        ]}"
+    )
+
+    print(
+        "Incorrect VERIFY preserved: "
+        f"{impact[
+            'verify_incorrect_preserved'
+        ]}"
+    )
+
+    print(
+        "\nEvidence label accuracy:"
+    )
+
+    evidence_metrics = analysis[
+        "evidence_label_metrics"
+    ]
 
     for evidence_label in (
         "SUPPORTED",
         "WEAK",
-        "UNSUPPORTED",
+        "UNSUPPORTED"
     ):
-        metrics = evidence_metrics.get(evidence_label)
+        metrics = evidence_metrics.get(
+            evidence_label
+        )
 
         if metrics is None:
             continue
@@ -832,41 +950,47 @@ def print_summary(
             f"{evidence_label}: "
             f"count={metrics['count']} | "
             f"accuracy="
-            f"{format_metric(metrics['accuracy'])}"
+            f"{format_metric(
+                metrics['accuracy']
+            )}"
         )
 
-    print("\nDecision transitions:")
+    print(
+        "\nDecision transitions:"
+    )
 
-    for transition, metrics in analysis["transition_metrics"].items():
+    for transition, metrics in (
+        analysis["transition_metrics"].items()
+    ):
         print(
             f"{transition}: "
             f"count={metrics['count']} | "
             f"accuracy="
-            f"{format_metric(metrics['accuracy'])}"
+            f"{format_metric(
+                metrics['accuracy']
+            )}"
         )
 
 
+
+# load predictions -> analyze evidence impact -> save summary + case details -> print results -> return analysis.
 def run_analysis(
     input_path: str | Path,
     metrics_output_path: str | Path,
-    cases_output_path: str | Path,
+    cases_output_path: str | Path
 ) -> dict[str, Any]:
-    """
-    Run the complete evidence impact analysis.
-    """
-
     predictions = load_jsonl(input_path)
 
     analysis, analyzed_cases = analyze_predictions(predictions)
 
     save_json(
         data=analysis,
-        output_path=metrics_output_path,
+        output_path=metrics_output_path
     )
 
     save_jsonl(
         analyzed_cases,
-        cases_output_path,
+        cases_output_path
     )
 
     print_summary(analysis)
@@ -879,10 +1003,6 @@ def run_analysis(
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Parse command-line arguments.
-    """
-
     parser = argparse.ArgumentParser(
         description=(
             "Analyze how evidence verification changes selective QA decisions."
@@ -892,19 +1012,19 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         default=str(DEFAULT_INPUT_PATH),
-        help=("JSONL file containing final decision engine predictions."),
+        help=("JSONL file containing final decision engine predictions.")
     )
 
     parser.add_argument(
         "--metrics-output",
         default=str(DEFAULT_METRICS_OUTPUT_PATH),
-        help=("JSON output path for evidence impact metrics."),
+        help=("JSON output path for evidence impact metrics.")
     )
 
     parser.add_argument(
         "--cases-output",
         default=str(DEFAULT_CASES_OUTPUT_PATH),
-        help=("JSONL output path for diagnostic prediction cases."),
+        help=("JSONL output path for diagnostic prediction cases.")
     )
 
     return parser.parse_args()
