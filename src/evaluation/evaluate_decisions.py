@@ -1,5 +1,5 @@
 """
-
+Evaluates the final ANSWER / VERIFY / ABSTAIN policy, measures the accuracy and risk of each decision group, compares it with the threshold-only policy, and summarizes evidence/decision behavior.
 """
 
 import argparse
