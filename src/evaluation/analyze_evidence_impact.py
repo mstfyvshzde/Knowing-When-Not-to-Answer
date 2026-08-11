@@ -1,5 +1,5 @@
 """
-
+threshold decision -> evidence verification -> final decision -> analyze whether evidence helped catch wrong answers or accidentally blocked correct ones.
 """
 
 import argparse
