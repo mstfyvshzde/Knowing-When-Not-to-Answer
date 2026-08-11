@@ -1,17 +1,5 @@
 """
-Evaluate confidence-only, lexical, and hybrid abstention systems.
-
-The evaluator measures:
-
-1. Coverage
-2. Selective accuracy
-3. Selective risk
-4. Wrong answered count
-5. Correct rejected count
-6. Wrong-supported count
-
-Gold labels are used only during evaluation.
-They are never used by the verifier itself.
+Compares confidence-only, lexical-verifier, and hybrid-verifier selective QA systems by measuring coverage, accuracy, selective risk, and rejection behavior.
 """
 
 import argparse
@@ -33,15 +21,12 @@ DEFAULT_HYBRID_SUPPORTED_LABEL = "SUPPORTED"
 DEFAULT_RELAXED_F1_THRESHOLD = 0.80
 
 
+# Returns the first non-None value found among several possible field names, or returns a default value if none are available.
 def get_first_value(
     prediction: dict[str, Any],
     field_names: tuple[str, ...],
-    default: Any = None,
+    default: Any = None
 ) -> Any:
-    """
-    Returns the first available non-None value.
-    """
-
     for field_name in field_names:
         value = prediction.get(field_name)
 
@@ -51,19 +36,16 @@ def get_first_value(
     return default
 
 
+# Gets the first available value from several possible fields, converts it to a float, and returns the default if conversion fails.
 def get_first_numeric_value(
     prediction: dict[str, Any],
     field_names: tuple[str, ...],
-    default: float = 0.0,
+    default: float = 0.0
 ) -> float:
-    """
-    Returns the first available numeric value.
-    """
-
     value = get_first_value(
         prediction=prediction,
         field_names=field_names,
-        default=default,
+        default=default
     )
 
     try:
@@ -73,37 +55,24 @@ def get_first_numeric_value(
         return float(default)
 
 
+# Extracts the predicted answer from several possible field names and returns it as a clean string.
 def get_predicted_answer(prediction: dict[str, Any]) -> str:
-    """
-    Extracts the model's predicted answer.
-    """
-
     value = get_first_value(
         prediction=prediction,
         field_names=(
             "predicted_answer",
             "prediction_text",
             "prediction_answer",
-            "answer",
+            "answer"
         ),
-        default="",
+        default=""
     )
 
     return str(value).strip()
 
 
+# Extracts all reference/gold answers from several possible field formats and returns them as a clean list of strings.
 def get_reference_answers(prediction: dict[str, Any]) -> list[str]:
-    """
-    Extracts all available gold/reference answers.
-
-    Supports:
-        - reference_answers
-        - gold_answers
-        - answers
-        - reference_answer
-        - gold_answer
-    """
-
     value = get_first_value(
         prediction=prediction,
         field_names=(
@@ -111,9 +80,9 @@ def get_reference_answers(prediction: dict[str, Any]) -> list[str]:
             "gold_answers",
             "answers",
             "reference_answer",
-            "gold_answer",
+            "gold_answer"
         ),
-        default=[],
+        default=[]
     )
 
     if isinstance(value, dict):
@@ -148,24 +117,19 @@ def get_reference_answers(prediction: dict[str, Any]) -> list[str]:
     return [str(value).strip()]
 
 
+# Determines whether the question is answerable using explicit answerability fields, or infers it from the presence of non-empty reference answers.
 def get_is_answerable(prediction: dict[str, Any]) -> bool:
-    """
-    Extracts the gold answerability label.
-
-    Supports explicit fields and falls back to whether
-    reference answers contain a non-empty answer.
-    """
-
     explicit_value = get_first_value(
         prediction=prediction,
         field_names=(
             "is_answerable",
             "answerable",
-            "gold_is_answerable",
+            "gold_is_answerable"
         ),
-        default=None,
+        default=None
     )
 
+    # explicit_value means the value is directly stored in the prediction, instead of being inferred from something else.
     if explicit_value is not None:
         if isinstance(explicit_value, bool):
             return explicit_value
@@ -179,7 +143,7 @@ def get_is_answerable(prediction: dict[str, Any]) -> bool:
             "true",
             "1",
             "yes",
-            "answerable",
+            "answerable"
         }:
             return True
 
@@ -187,7 +151,7 @@ def get_is_answerable(prediction: dict[str, Any]) -> bool:
             "false",
             "0",
             "no",
-            "unanswerable",
+            "unanswerable"
         }:
             return False
 
@@ -196,11 +160,9 @@ def get_is_answerable(prediction: dict[str, Any]) -> bool:
     return any(answer.strip() for answer in reference_answers)
 
 
-def normalize_answer(text: str) -> str:
-    """
-    Standard SQuAD-style answer normalization.
-    """
 
+# Normalizes an answer by lowercasing it, removing punctuation and articles, and fixing extra spaces for fair comparison.
+def normalize_answer(text: str) -> str:
     text = str(text).lower()
 
     text = "".join(
@@ -210,7 +172,7 @@ def normalize_answer(text: str) -> str:
     text = re.sub(
         r"\b(a|an|the)\b",
         " ",
-        text,
+        text
     )
 
     text = " ".join(text.split())
@@ -218,27 +180,21 @@ def normalize_answer(text: str) -> str:
     return text
 
 
+# Compares the normalized predicted answer with the normalized reference answer, returning 1.0 for an exact match and 0.0 otherwise.
 def exact_match_score(
     prediction: str,
     reference: str,
 ) -> float:
-    """
-    Computes normalized exact match.
-    """
-
     return float(normalize_answer(prediction) == normalize_answer(reference))
 
 
+
+# Measures word-level similarity between the predicted answer and the reference answer using precision, recall, and F1 score.
 def token_f1_score(
     prediction: str,
-    reference: str,
+    reference: str
 ) -> float:
-    """
-    Computes token-level F1.
-    """
-
     prediction_tokens = normalize_answer(prediction).split()
-
     reference_tokens = normalize_answer(reference).split()
 
     if not prediction_tokens and not reference_tokens:
@@ -248,28 +204,24 @@ def token_f1_score(
         return 0.0
 
     common_tokens = Counter(prediction_tokens) & Counter(reference_tokens)
-
     overlap_count = sum(common_tokens.values())
 
     if overlap_count == 0:
         return 0.0
 
     precision = overlap_count / len(prediction_tokens)
-
     recall = overlap_count / len(reference_tokens)
 
-    return 2.0 * precision * recall / (precision + recall)
+    f1_score = 2.0 * precision * recall / (precision + recall)
+
+    return f1_score
 
 
+# Calculates the best Exact Match and token-level F1 scores by comparing the predicted answer with all available reference answers.
 def calculate_answer_scores(
     predicted_answer: str,
-    reference_answers: list[str],
+    reference_answers: list[str]
 ) -> tuple[float, float]:
-    """
-    Returns maximum Exact Match and Token F1 scores
-    across all reference answers.
-    """
-
     if not reference_answers:
         normalized_prediction = normalize_answer(predicted_answer)
 
@@ -280,7 +232,7 @@ def calculate_answer_scores(
     exact_match = max(
         exact_match_score(
             predicted_answer,
-            reference_answer,
+            reference_answer
         )
         for reference_answer in reference_answers
     )
@@ -288,7 +240,7 @@ def calculate_answer_scores(
     token_f1 = max(
         token_f1_score(
             predicted_answer,
-            reference_answer,
+            reference_answer
         )
         for reference_answer in reference_answers
     )
@@ -296,28 +248,18 @@ def calculate_answer_scores(
     return exact_match, token_f1
 
 
+# Determines whether a prediction is correct using answerability, Exact Match, and a relaxed token-level F1 threshold.
 def is_prediction_correct(
     prediction: dict[str, Any],
-    relaxed_f1_threshold: float,
+    relaxed_f1_threshold: float
 ) -> tuple[bool, float, float]:
-    """
-    Determines whether the QA prediction is correct.
-
-    Correct when:
-        - answerable and exact match is 1
-        - answerable and Token F1 exceeds relaxed threshold
-        - unanswerable and model returns an empty answer
-    """
-
     predicted_answer = get_predicted_answer(prediction)
-
     reference_answers = get_reference_answers(prediction)
-
     is_answerable = get_is_answerable(prediction)
 
     exact_match, token_f1 = calculate_answer_scores(
         predicted_answer=predicted_answer,
-        reference_answers=reference_answers,
+        reference_answers=reference_answers
     )
 
     if not is_answerable:
@@ -325,19 +267,18 @@ def is_prediction_correct(
 
         return correct, exact_match, token_f1
 
+    # relaxed_f1_threshold is the minimum token-level F1 score required to count a non-exact answer as correct.
     correct = exact_match == 1.0 or token_f1 >= relaxed_f1_threshold
 
     return correct, exact_match, token_f1
 
 
+
+# get the best available confidence score -> compare it with the threshold -> high enough = ANSWER, otherwise = ABSTAIN.
 def confidence_only_answers(
     prediction: dict[str, Any],
-    confidence_threshold: float,
+    confidence_threshold: float
 ) -> bool:
-    """
-    Confidence-only baseline decision.
-    """
-
     calibrated_confidence = get_first_numeric_value(
         prediction=prediction,
         field_names=(
@@ -345,24 +286,18 @@ def confidence_only_answers(
             "confidence_calibrated",
             "calibrated_probability",
             "confidence",
-            "raw_confidence",
+            "raw_confidence"
         ),
-        default=0.0,
+        default=0.0
     )
 
     return calibrated_confidence >= confidence_threshold
 
 
+# get lexical support label -> clean it -> if it equals SUPPORTED, answer; otherwise abstain/reject
 def lexical_verifier_answers(
-    prediction: dict[str, Any],
+    prediction: dict[str, Any]
 ) -> bool:
-    """
-    Lexical verifier decision.
-
-    Only lexical SUPPORTED predictions are answered.
-    WEAK and UNSUPPORTED are rejected.
-    """
-
     lexical_label = (
         str(
             get_first_value(
@@ -371,9 +306,9 @@ def lexical_verifier_answers(
                     "evidence_support",
                     "evidence_label",
                     "lexical_evidence_support",
-                    "lexical_label",
+                    "lexical_label"
                 ),
-                default="UNSUPPORTED",
+                default="UNSUPPORTED"
             )
         )
         .strip()
@@ -383,16 +318,11 @@ def lexical_verifier_answers(
     return lexical_label == DEFAULT_LEXICAL_SUPPORTED_LABEL
 
 
+
+# get hybrid support label -> clean it -> SUPPORTED = ANSWER, otherwise = reject/abstain.
 def hybrid_verifier_answers(
     prediction: dict[str, Any],
 ) -> bool:
-    """
-    Hybrid verifier decision.
-
-    Only hybrid SUPPORTED predictions are answered.
-    WEAK and UNSUPPORTED are rejected.
-    """
-
     hybrid_label = (
         str(
             get_first_value(
@@ -400,9 +330,9 @@ def hybrid_verifier_answers(
                 field_names=(
                     "hybrid_evidence_support",
                     "hybrid_support",
-                    "hybrid_label",
+                    "hybrid_label"
                 ),
-                default="UNSUPPORTED",
+                default="UNSUPPORTED"
             )
         )
         .strip()
@@ -412,15 +342,13 @@ def hybrid_verifier_answers(
     return hybrid_label == DEFAULT_HYBRID_SUPPORTED_LABEL
 
 
+
+# for every prediction, it checks whether the system answered or abstained and whether that choice was correct, then summarizes the whole system’s performance.
 def evaluate_system(
     predictions: list[dict[str, Any]],
     answer_decisions: list[bool],
-    relaxed_f1_threshold: float,
+    relaxed_f1_threshold: float
 ) -> dict[str, Any]:
-    """
-    Evaluates one selective QA system.
-    """
-
     if len(predictions) != len(answer_decisions):
         raise ValueError("Prediction and decision counts must match.")
 
@@ -453,15 +381,15 @@ def evaluate_system(
             predictions,
             answer_decisions,
         ),
-        start=1,
+        start=1
     ):
         (
             is_correct,
             exact_match,
-            token_f1,
+            token_f1
         ) = is_prediction_correct(
             prediction=prediction,
-            relaxed_f1_threshold=(relaxed_f1_threshold),
+            relaxed_f1_threshold=(relaxed_f1_threshold)
         )
 
         total_exact_match += exact_match
@@ -485,7 +413,7 @@ def evaluate_system(
                         "index": index,
                         "question": prediction.get(
                             "question",
-                            "",
+                            ""
                         ),
                         "predicted_answer": (get_predicted_answer(prediction)),
                         "reference_answers": (get_reference_answers(prediction)),
@@ -496,8 +424,8 @@ def evaluate_system(
                                 prediction,
                                 (
                                     "calibrated_confidence",
-                                    "confidence",
-                                ),
+                                    "confidence"
+                                )
                             )
                         ),
                         "lexical_support": (
@@ -506,23 +434,23 @@ def evaluate_system(
                                 (
                                     "evidence_support",
                                     "evidence_label",
-                                    "lexical_evidence_support",
+                                    "lexical_evidence_support"
                                 ),
-                                "",
+                                ""
                             )
                         ),
                         "hybrid_support": (
                             prediction.get(
                                 "hybrid_evidence_support",
-                                "",
+                                ""
                             )
                         ),
                         "hybrid_score": (
                             prediction.get(
                                 "hybrid_evidence_score",
-                                0.0,
+                                0.0
                             )
-                        ),
+                        )
                     }
                 )
 
@@ -537,7 +465,7 @@ def evaluate_system(
                         "index": index,
                         "question": prediction.get(
                             "question",
-                            "",
+                            ""
                         ),
                         "predicted_answer": (get_predicted_answer(prediction)),
                         "reference_answers": (get_reference_answers(prediction)),
@@ -548,8 +476,8 @@ def evaluate_system(
                                 prediction,
                                 (
                                     "calibrated_confidence",
-                                    "confidence",
-                                ),
+                                    "confidence"
+                                )
                             )
                         ),
                         "lexical_support": (
@@ -558,23 +486,23 @@ def evaluate_system(
                                 (
                                     "evidence_support",
                                     "evidence_label",
-                                    "lexical_evidence_support",
+                                    "lexical_evidence_support"
                                 ),
-                                "",
+                                ""
                             )
                         ),
                         "hybrid_support": (
                             prediction.get(
                                 "hybrid_evidence_support",
-                                "",
+                                ""
                             )
                         ),
                         "hybrid_score": (
                             prediction.get(
                                 "hybrid_evidence_score",
-                                0.0,
+                                0.0
                             )
-                        ),
+                        )
                     }
                 )
 
@@ -627,18 +555,15 @@ def evaluate_system(
         "answered_average_exact_match": (answered_average_exact_match),
         "answered_average_token_f1": (answered_average_token_f1),
         "wrong_answered_examples": (wrong_answered_examples),
-        "correct_rejected_examples": (correct_rejected_examples),
+        "correct_rejected_examples": (correct_rejected_examples)
     }
 
 
+# take the metrics dictionary -> display counts, coverage, abstention, accuracy, risk, EM, and F1 for that system.
 def print_system_metrics(
     system_name: str,
     metrics: dict[str, Any],
 ) -> None:
-    """
-    Prints evaluation metrics for one system.
-    """
-
     print("\n" + "=" * 60)
 
     print(system_name)
@@ -672,15 +597,12 @@ def print_system_metrics(
     print(f"Answered average F1:   {metrics['answered_average_token_f1']:.4f}")
 
 
+# show critical examples for error analysis -> inspect why the system made bad ANSWER/ABSTAIN decisions.
 def print_critical_examples(
     system_name: str,
     metrics: dict[str, Any],
-    max_examples: int,
+    max_examples: int
 ) -> None:
-    """
-    Prints wrong answered and correct rejected examples.
-    """
-
     wrong_examples = metrics["wrong_answered_examples"]
 
     print("\n" + "-" * 60)
@@ -742,16 +664,13 @@ def print_critical_examples(
         print(f"Hybrid score: {float(example['hybrid_score']):.4f}")
 
 
+# load predictions -> create decisions for 3 systems -> evaluate all 3 -> compare coverage/accuracy/risk -> show hybrid’s critical errors -> return results.
 def run_evaluation(
     input_path: str | Path,
     confidence_threshold: float,
     relaxed_f1_threshold: float,
-    max_examples: int,
+    max_examples: int
 ) -> dict[str, dict[str, Any]]:
-    """
-    Runs comparative evaluation.
-    """
-
     predictions = load_jsonl(input_path)
 
     if not predictions:
@@ -760,7 +679,7 @@ def run_evaluation(
     confidence_decisions = [
         confidence_only_answers(
             prediction=prediction,
-            confidence_threshold=(confidence_threshold),
+            confidence_threshold=(confidence_threshold)
         )
         for prediction in predictions
     ]
@@ -776,25 +695,25 @@ def run_evaluation(
     confidence_metrics = evaluate_system(
         predictions=predictions,
         answer_decisions=(confidence_decisions),
-        relaxed_f1_threshold=(relaxed_f1_threshold),
+        relaxed_f1_threshold=(relaxed_f1_threshold)
     )
 
     lexical_metrics = evaluate_system(
         predictions=predictions,
         answer_decisions=(lexical_decisions),
-        relaxed_f1_threshold=(relaxed_f1_threshold),
+        relaxed_f1_threshold=(relaxed_f1_threshold)
     )
 
     hybrid_metrics = evaluate_system(
         predictions=predictions,
         answer_decisions=(hybrid_decisions),
-        relaxed_f1_threshold=(relaxed_f1_threshold),
+        relaxed_f1_threshold=(relaxed_f1_threshold)
     )
 
     results = {
         "confidence_only": (confidence_metrics),
         "lexical_verifier": (lexical_metrics),
-        "hybrid_verifier": (hybrid_metrics),
+        "hybrid_verifier": (hybrid_metrics)
     }
 
     print("\nComparative selective QA evaluation")
@@ -807,17 +726,17 @@ def run_evaluation(
 
     print_system_metrics(
         system_name=("CONFIDENCE-ONLY BASELINE"),
-        metrics=confidence_metrics,
+        metrics=confidence_metrics
     )
 
     print_system_metrics(
         system_name=("LEXICAL VERIFIER"),
-        metrics=lexical_metrics,
+        metrics=lexical_metrics
     )
 
     print_system_metrics(
         system_name=("HYBRID VERIFIER"),
-        metrics=hybrid_metrics,
+        metrics=hybrid_metrics
     )
 
     print("\n" + "=" * 60)
@@ -840,16 +759,16 @@ def run_evaluation(
     for system_name, metrics in (
         (
             "Confidence-only",
-            confidence_metrics,
+            confidence_metrics
         ),
         (
             "Lexical verifier",
-            lexical_metrics,
+            lexical_metrics
         ),
         (
             "Hybrid verifier",
-            hybrid_metrics,
-        ),
+            hybrid_metrics
+        )
     ):
         print(
             f"{system_name:<24}"
@@ -863,17 +782,13 @@ def run_evaluation(
     print_critical_examples(
         system_name="HYBRID VERIFIER",
         metrics=hybrid_metrics,
-        max_examples=max_examples,
+        max_examples=max_examples
     )
 
     return results
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Parses command-line arguments.
-    """
-
     parser = argparse.ArgumentParser(
         description=(
             "Evaluate confidence-only, lexical, and hybrid selective QA systems."
