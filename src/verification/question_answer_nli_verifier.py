@@ -1,28 +1,5 @@
 """
-Question-aware semantic evidence verifier.
 
-Pipeline
---------
-1. Convert a question-answer pair into a declarative claim.
-2. Compare the generated claim against the context using NLI.
-3. Store entailment, neutral, and contradiction probabilities.
-4. Assign an evidence label:
-       ENTAILMENT
-       NEUTRAL
-       CONTRADICTION
-
-Example
--------
-Question:
-    What is stainless steel's theoretical Carnot efficiency?
-
-Predicted answer:
-    63%
-
-Generated claim:
-    Stainless steel's theoretical Carnot efficiency is 63%.
-
-The generated claim is then evaluated against the context.
 """
 
 from __future__ import annotations
@@ -36,38 +13,64 @@ from pathlib import Path
 from typing import Any
 
 import torch
+
+
+# AutoTokenizer -> Converts raw text into tokens/numbers the transformer model can understand.
+# AutoModelForSeq2SeqLM -> Used for text generation / text-to-text tasks.
+# AutoModelForSequenceClassification -> Used for classification, not generation.
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
 
+
 DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_hybrid_evidence.jsonl")
 
-DEFAULT_OUTPUT_PATH = Path(
-    "outputs/predictions/calibration_with_question_aware_semantic_evidence.jsonl"
-)
+DEFAULT_OUTPUT_PATH = Path("outputs/predictions/calibration_with_question_aware_semantic_evidence.jsonl")
 
+
+# Generates the claim from question + answer
+# It turns the QA pair into a normal statement.
+# Question: Who wrote Hamlet?
+# Answer: Shakespeare
+# -> Claim: Shakespeare wrote Hamlet.
 DEFAULT_QA2D_MODEL = "google/flan-t5-base"
+
+# Checks the claim against evidence
+# It compares that claim with the evidence and decides:
+# Entailment -> evidence supports the claim.
+# Contradiction -> evidence says the claim is wrong.
+# Neutral -> evidence does not clearly support or reject the claim.
+# So: question + answer -> claim -> compare with evidence -> NLI label
 DEFAULT_NLI_MODEL = "FacebookAI/roberta-large-mnli"
 
+
+
+# maximum number of tokens taken from the evidence/context.
 DEFAULT_MAX_CONTEXT_TOKENS = 384
+
+# maximum number of tokens allowed for the claim.
 DEFAULT_MAX_CLAIM_TOKENS = 96
+
+# maximum number of new tokens FLAN-T5 can generate when creating the claim.
 DEFAULT_GENERATION_MAX_NEW_TOKENS = 64
 
+
+# if entailment probability is at least 0.50, treat the claim as supported.
 DEFAULT_ENTAILMENT_THRESHOLD = 0.50
+
+# if contradiction probability is at least 0.50, treat the claim as contradicted.
 DEFAULT_CONTRADICTION_THRESHOLD = 0.50
 
+# process 8 examples together in one model batch.
 DEFAULT_BATCH_SIZE = 8
 
 
+# Loads a JSONL file, validates each non-empty line as a JSON object, and returns all records as a list of dictionaries.
 def load_jsonl(
-    path: str | Path,
+    path: str | Path
 ) -> list[dict[str, Any]]:
-    """
-    Load a JSON Lines file.
-    """
-
     input_path = Path(path)
 
     if not input_path.exists():
@@ -77,11 +80,11 @@ def load_jsonl(
 
     with input_path.open(
         "r",
-        encoding="utf-8",
+        encoding="utf-8"
     ) as input_file:
         for line_number, line in enumerate(
             input_file,
-            start=1,
+            start=1
         ):
             stripped_line = line.strip()
 
@@ -104,44 +107,39 @@ def load_jsonl(
     return records
 
 
+# Saves dictionary records to a JSONL file, creating the parent directory if necessary and writing one JSON object per line.
 def save_jsonl(
     records: Iterable[dict[str, Any]],
-    path: str | Path,
+    path: str | Path
 ) -> None:
-    """
-    Save records as JSON Lines.
-    """
-
     output_path = Path(path)
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
     with output_path.open(
         "w",
-        encoding="utf-8",
+        encoding="utf-8"
     ) as output_file:
         for record in records:
             output_file.write(
                 json.dumps(
                     record,
-                    ensure_ascii=False,
+                    ensure_ascii=False
                 )
                 + "\n"
             )
 
 
+
+# Returns the first available non-None value from a list of possible field names, or returns a default value.
 def get_first_value(
     record: dict[str, Any],
     field_names: tuple[str, ...],
-    default: Any = None,
+    default: Any = None
 ) -> Any:
-    """
-    Return the first available non-None value.
-    """
-
     for field_name in field_names:
         value = record.get(field_name)
 
@@ -151,96 +149,84 @@ def get_first_value(
     return default
 
 
-def get_question(
-    record: dict[str, Any],
-) -> str:
-    """
-    Extract the question.
-    """
 
+# Extracts and cleans the question text from a record using several possible question field names.
+def get_question(
+    record: dict[str, Any]
+) -> str:
     value = get_first_value(
         record=record,
         field_names=(
             "question",
             "question_text",
-            "query",
+            "query"
         ),
-        default="",
+        default=""
     )
 
     return clean_text(str(value))
 
 
-def get_predicted_answer(
-    record: dict[str, Any],
-) -> str:
-    """
-    Extract the model's predicted answer.
-    """
 
+# Extracts and cleans the model's predicted answer from a record using several possible prediction field names.
+def get_predicted_answer(
+    record: dict[str, Any]
+) -> str:
     value = get_first_value(
         record=record,
         field_names=(
             "predicted_answer",
             "prediction_text",
             "prediction_answer",
-            "answer",
+            "answer"
         ),
-        default="",
+        default=""
     )
 
     return clean_text(str(value))
 
 
+# Extracts and cleans the context/evidence text from a record using several possible context field names.
 def get_context(
-    record: dict[str, Any],
+    record: dict[str, Any]
 ) -> str:
-    """
-    Extract the evidence context.
-    """
-
     value = get_first_value(
         record=record,
         field_names=(
             "context",
             "passage",
             "evidence_context",
-            "source_context",
+            "source_context"
         ),
-        default="",
+        default=""
     )
 
     return clean_text(str(value))
 
 
+# Cleans text by collapsing repeated whitespace and removing leading and trailing spaces.
 def clean_text(
     text: str,
 ) -> str:
-    """
-    Normalise whitespace without changing content.
-    """
-
     return re.sub(
         r"\s+",
         " ",
-        str(text),
+        str(text)
     ).strip()
 
 
-def normalise_generated_claim(
-    claim: str,
-) -> str:
-    """
-    Clean a generated declarative claim.
-    """
 
+# Cleans and standardizes a generated claim by removing common prefixes and quotes, then ensuring proper ending punctuation.
+def normalise_generated_claim(
+    claim: str
+) -> str:
     cleaned_claim = clean_text(claim)
 
     prefixes = (
         "statement:",
         "claim:",
         "declarative statement:",
-        "answer:",
+        "answer:"
     )
 
     lowered_claim = cleaned_claim.lower()
@@ -259,15 +245,12 @@ def normalise_generated_claim(
     return cleaned_claim
 
 
+
+# Builds the QA-to-declarative prompt that instructs the generation model to convert a question and answer into one concise, self-contained claim.
 def build_qa2d_prompt(
     question: str,
-    answer: str,
+    answer: str
 ) -> str:
-    """
-    Build the instruction used to convert a QA pair
-    into one self-contained declarative statement.
-    """
-
     return (
         "Convert the following question and answer into "
         "one concise, self-contained declarative statement. "
@@ -279,25 +262,18 @@ def build_qa2d_prompt(
     )
 
 
+
+# Creates a simple fallback claim from the question and answer when normal claim generation is unavailable or fails.
 def fallback_claim(
     question: str,
     answer: str,
 ) -> str:
-    """
-    Safe fallback when claim generation returns empty text.
-
-    This representation still keeps the question and answer
-    together instead of verifying the answer alone.
-    """
-
     return f'The answer to the question "{question}" is "{answer}".'
 
 
-def select_device() -> torch.device:
-    """
-    Select CUDA, Apple Silicon MPS, or CPU.
-    """
 
+
+def select_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
 
@@ -308,17 +284,12 @@ def select_device() -> torch.device:
 
 
 class QuestionToClaimConverter:
-    """
-    Convert question-answer pairs into declarative claims
-    using an instruction-tuned sequence-to-sequence model.
-    """
-
     def __init__(
         self,
         model_name: str,
         device: torch.device,
         max_input_tokens: int,
-        max_new_tokens: int,
+        max_new_tokens: int
     ) -> None:
         self.device = device
         self.max_input_tokens = max_input_tokens
@@ -339,10 +310,6 @@ class QuestionToClaimConverter:
         questions: list[str],
         answers: list[str],
     ) -> list[str]:
-        """
-        Generate claims for a batch of QA pairs.
-        """
-
         if len(questions) != len(answers):
             raise ValueError("Question and answer batch sizes must match.")
 
@@ -405,10 +372,6 @@ class QuestionToClaimConverter:
 
 
 class QuestionAwareNLIVerifier:
-    """
-    Verify generated question-answer claims using an
-    MNLI sequence-classification model.
-    """
 
     def __init__(
         self,
@@ -443,9 +406,6 @@ class QuestionAwareNLIVerifier:
     def _resolve_label_ids(
         self,
     ) -> dict[str, int]:
-        """
-        Resolve model-specific NLI label indices.
-        """
 
         resolved_labels: dict[str, int] = {}
 
@@ -486,9 +446,6 @@ class QuestionAwareNLIVerifier:
         text: str,
         max_tokens: int,
     ) -> str:
-        """
-        Truncate text using the NLI tokenizer.
-        """
 
         token_ids = self.tokenizer.encode(
             text,
@@ -509,12 +466,6 @@ class QuestionAwareNLIVerifier:
         neutral_probability: float,
         contradiction_probability: float,
     ) -> str:
-        """
-        Assign a semantic evidence label.
-
-        Contradiction receives priority when its
-        probability reaches the configured threshold.
-        """
 
         if contradiction_probability >= self.contradiction_threshold:
             return "CONTRADICTION"
@@ -542,10 +493,6 @@ class QuestionAwareNLIVerifier:
         contexts: list[str],
         claims: list[str],
     ) -> list[dict[str, Any]]:
-        """
-        Verify a batch of context-claim pairs.
-        """
-
         if len(contexts) != len(claims):
             raise ValueError("Context and claim batch sizes must match.")
 
@@ -633,10 +580,6 @@ def batched_indices(
     total_size: int,
     batch_size: int,
 ) -> Iterable[tuple[int, int]]:
-    """
-    Yield start and end indices for batches.
-    """
-
     if batch_size <= 0:
         raise ValueError("Batch size must be positive.")
 
@@ -706,11 +649,6 @@ def verify_predictions(
     entailment_threshold: float,
     contradiction_threshold: float,
 ) -> list[dict[str, Any]]:
-    """
-    Run question-aware claim generation and NLI
-    verification over all predictions.
-    """
-
     records = load_jsonl(input_path)
 
     validate_records(records)
@@ -807,13 +745,13 @@ def verify_predictions(
             question,
             answer,
             claim,
-            result,
+            result
         ) in zip(
             batch_records,
             questions,
             answers,
             claims,
-            nli_results,
+            nli_results
         ):
             updated_record = dict(record)
 
@@ -824,7 +762,7 @@ def verify_predictions(
                     "qa_claim_answer": (answer),
                     **result,
                     "qa_nli_model": (nli_model_name),
-                    "qa_claim_generator_model": (qa2d_model_name),
+                    "qa_claim_generator_model": (qa2d_model_name)
                 }
             )
 
@@ -834,14 +772,14 @@ def verify_predictions(
 
     save_jsonl(
         records=verified_records,
-        path=output_path,
+        path=output_path
     )
 
     label_counts = Counter(
         str(
             record.get(
                 "qa_nli_label",
-                "UNKNOWN",
+                "UNKNOWN"
             )
         )
         for record in verified_records
@@ -879,58 +817,58 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         "--input",
-        default=str(DEFAULT_INPUT_PATH),
+        default=str(DEFAULT_INPUT_PATH)
     )
 
     parser.add_argument(
         "--output",
-        default=str(DEFAULT_OUTPUT_PATH),
+        default=str(DEFAULT_OUTPUT_PATH)
     )
 
     parser.add_argument(
         "--qa2d-model",
-        default=DEFAULT_QA2D_MODEL,
+        default=DEFAULT_QA2D_MODEL
     )
 
     parser.add_argument(
         "--nli-model",
-        default=DEFAULT_NLI_MODEL,
+        default=DEFAULT_NLI_MODEL
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=DEFAULT_BATCH_SIZE,
+        default=DEFAULT_BATCH_SIZE
     )
 
     parser.add_argument(
         "--max-context-tokens",
         type=int,
-        default=(DEFAULT_MAX_CONTEXT_TOKENS),
+        default=(DEFAULT_MAX_CONTEXT_TOKENS)
     )
 
     parser.add_argument(
         "--max-claim-tokens",
         type=int,
-        default=(DEFAULT_MAX_CLAIM_TOKENS),
+        default=(DEFAULT_MAX_CLAIM_TOKENS)
     )
 
     parser.add_argument(
         "--generation-max-new-tokens",
         type=int,
-        default=(DEFAULT_GENERATION_MAX_NEW_TOKENS),
+        default=(DEFAULT_GENERATION_MAX_NEW_TOKENS)
     )
 
     parser.add_argument(
         "--entailment-threshold",
         type=float,
-        default=(DEFAULT_ENTAILMENT_THRESHOLD),
+        default=(DEFAULT_ENTAILMENT_THRESHOLD)
     )
 
     parser.add_argument(
         "--contradiction-threshold",
         type=float,
-        default=(DEFAULT_CONTRADICTION_THRESHOLD),
+        default=(DEFAULT_CONTRADICTION_THRESHOLD)
     )
 
     return parser.parse_args()
@@ -949,5 +887,5 @@ if __name__ == "__main__":
         max_claim_tokens=(arguments.max_claim_tokens),
         generation_max_new_tokens=(arguments.generation_max_new_tokens),
         entailment_threshold=(arguments.entailment_threshold),
-        contradiction_threshold=(arguments.contradiction_threshold),
+        contradiction_threshold=(arguments.contradiction_threshold)
     )
