@@ -1,7 +1,6 @@
 """Tests the decision engine to make sure it correctly reads confidence and evidence information, combines them into ANSWER, VERIFY, or ABSTAIN decisions, handles invalid inputs, and calculates final decision metrics correctly."""
 import pytest
 
-
 from src.decision.decision_engine import (
     calculate_decision_metrics,
     combine_decisions,

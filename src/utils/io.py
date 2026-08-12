@@ -104,7 +104,7 @@ def load_jsonl(
                 ) from error
 
             if not isinstance(record, dict):
-                raise ValueError(f"Line {line_number} must contain a JSON object.")
+                raise TypeError(f"Line {line_number} must contain a JSON object.")
 
             records.append(record)
 

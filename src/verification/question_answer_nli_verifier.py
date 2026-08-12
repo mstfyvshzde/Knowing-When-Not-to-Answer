@@ -1,6 +1,4 @@
-"""
-
-"""
+"""Question-aware NLI verifier for validating QA predictions."""
 
 from __future__ import annotations
 
@@ -14,7 +12,6 @@ from typing import Any
 
 import torch
 
-
 # AutoTokenizer -> Converts raw text into tokens/numbers the transformer model can understand.
 # AutoModelForSeq2SeqLM -> Used for text generation / text-to-text tasks.
 # AutoModelForSequenceClassification -> Used for classification, not generation.
@@ -23,7 +20,6 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
-
 
 DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_hybrid_evidence.jsonl")
 

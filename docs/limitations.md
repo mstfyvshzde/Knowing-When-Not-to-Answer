@@ -2,64 +2,97 @@
 
 ## Benchmark Scope
 
-The initial experiments will use controlled question-answering benchmarks.
+The final experiments use **SQuAD v2** only.
 
-Performance on these datasets may not represent reliability in open-domain, conversational, or real-world settings.
+Results on this benchmark do not establish reliability in open-domain, conversational, retrieval-augmented, multilingual, or real-world question-answering settings.
 
-## Model Dependence
+## Model Scope
 
-The results may depend on the selected answer-generation model and verifier.
+The answer-generation backbone is the pretrained extractive QA model:
 
-A method that performs well with one model may not generalize to models with different architectures, sizes, or training data.
+`deepset/roberta-base-squad2`
+
+The conclusions therefore apply to this experimental setting and should not be generalized to other QA architectures, generative language models, model scales, or training regimes without additional evaluation.
+
+## Verification-Model Dependence
+
+The question-aware semantic verifier and the self-verifier are separate verification paths, but both use:
+
+`FacebookAI/roberta-large-mnli`
+
+They should therefore **not** be interpreted as statistically independent verifier models.
+
+Any shared strengths, biases, or failure modes of this NLI backbone can affect both verification signals.
+
+## Claim-Generation Dependence
+
+Question-aware semantic verification depends on converting each question-answer pair into a declarative claim using:
+
+`domenicrosati/QA2D-t5-base`
+
+Claim-generation failures can reduce verification quality even when the downstream NLI model behaves correctly.
+
+Structurally invalid claims are assigned a semantic score of `0` and are not passed to the NLI model.
 
 ## Confidence Limitations
 
 Model confidence is not a direct measurement of truth.
 
-A system may assign high confidence to an incorrect answer or low confidence to a correct answer.
+Temperature scaling improves calibration on the calibration split but does not guarantee that confidence corresponds perfectly to correctness on every example or future dataset.
 
-Calibration can reduce this mismatch but cannot eliminate it completely.
+## Fixed Score Combination
 
-## Evidence Limitations
+The combined methods use a fixed equal-weight geometric mean.
 
-The framework can only verify answers against the evidence provided to it.
+This rule is intentionally not tuned on held-out test labels, which protects against leakage but also means other combination functions or calibration procedures may perform differently.
 
-If the context is incomplete, misleading, outdated, or incorrect, the verifier may still produce an unreliable decision.
+The study does not establish that equal-weight geometric combination is optimal.
 
-## Abstention Trade-Off
+## Selective Evaluation Limitations
 
-Increasing abstention may reduce incorrect answers but also reduce usefulness.
+AURC summarizes global ranking quality across coverage levels, but local operating points can differ from the overall ranking.
 
-A system can appear safer simply by refusing to answer too often.
+A method can be slightly better at a specific coverage level while still having worse overall AURC.
 
-For this reason, results must be compared at similar coverage levels.
+For this reason, matched-coverage results are interpreted together with, rather than instead of, the global risk-coverage analysis.
 
-## Labeling Limitations
+## Bootstrap Scope
 
-The categories `SUPPORTED`, `UNSUPPORTED`, and `UNCERTAIN` may involve ambiguous cases.
+The paired bootstrap analysis quantifies uncertainty **conditional on the observed 3,000-example held-out test sample**.
 
-Clear annotation rules and inter-annotator agreement will be required if manual labels are introduced.
+Its confidence intervals do not represent uncertainty across entirely different datasets, model families, annotation processes, or deployment environments.
+
+The bootstrap is used only after final predictions are fixed and is not used for system tuning.
 
 ## Dataset Bias
 
-Benchmark datasets may contain annotation artifacts, repeated patterns, or domain-specific biases.
+SQuAD v2 can contain annotation artifacts, benchmark-specific lexical patterns, and domain limitations.
 
-Models may exploit these patterns without learning general reliability.
+A model may exploit such regularities without learning a generally reliable abstention strategy.
 
-## Verification Cost
+## Computational Cost
 
-Additional verification steps increase computational cost and response latency.
+Semantic and self-verification require additional model inference beyond the calibrated-confidence baseline.
 
-The project will measure reliability but may not fully optimize efficiency.
+The project evaluates ranking quality but does not provide a full latency, energy, memory, or cost analysis.
 
-## Safety Claims
+## Safety and Deployment Claims
 
-This project does not demonstrate that the system is safe for medical, legal, financial, or other high-stakes applications.
+This work does **not** establish that the evaluated system is safe or reliable for medical, legal, financial, or other high-stakes applications.
 
-It evaluates reliability only under the tested experimental conditions.
+It also does not claim that semantic verification or self-verification is ineffective in general.
+
+The supported conclusion is narrower: in this SQuAD v2 extractive-QA setting, the evaluated verification signals did not outperform calibrated confidence for overall selective ranking.
 
 ## Generalization
 
-The project will not claim to solve hallucination or uncertainty estimation universally.
+The final findings are limited to:
 
-Any conclusions will be limited to the selected models, datasets, metrics, and experimental setup.
+- SQuAD v2
+- the evaluated extractive QA backbone
+- the QA2D claim-generation model
+- the shared RoBERTa-large MNLI verification backbone
+- the implemented scoring rules
+- the fixed held-out evaluation protocol
+
+Broader claims require evaluation across additional datasets, models, verifier architectures, and deployment conditions.

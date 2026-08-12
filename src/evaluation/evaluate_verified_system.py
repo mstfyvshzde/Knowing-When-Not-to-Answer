@@ -13,7 +13,6 @@ from src.evaluation.evaluate_decisions import (
 )
 from src.utils.io import load_jsonl
 
-
 DEFAULT_INPUT_PATH = Path(
     "outputs/predictions/calibration_final_decisions.jsonl"
 )

@@ -2,145 +2,182 @@
 
 ## Research Design
 
-This study will use a controlled experimental design to compare multiple answer-generation and abstention systems under the same dataset, model, and evaluation conditions.
+This study uses a controlled selective question-answering evaluation to compare confidence-based and verification-based ranking signals under the same dataset, QA backbone, and held-out test examples.
 
-The main independent variable is the verification strategy used before returning an answer.
+The primary research question is whether adding semantic or self-verification signals improves selective QA ranking over a strong calibrated-confidence baseline.
 
-The main dependent variables are:
+The main evaluation quantities are:
 
-* answer accuracy
-* coverage
-* selective risk
-* unsupported answer rate
-* false confidence rate
-* calibration error
+- answer correctness
+- coverage
+- selective risk
+- Area Under the Risk-Coverage Curve (AURC)
+- normalized AURC
+- matched-coverage selective accuracy and risk
 
-## Experimental Systems
+Lower AURC indicates better selective ranking.
 
-The study will compare four systems.
+## Dataset and Splits
 
-### 1. Raw Answer Baseline
+The experiments use SQuAD v2.
 
-The model answers every question without verification or abstention.
+The original SQuAD v2 validation split is divided into separate calibration and held-out test partitions using a deterministic 50/50 stratified split with seed 17.
 
-### 2. Confidence-Based Baseline
+The calibration split is used for calibration fitting only.
 
-The model abstains when its confidence score falls below a selected threshold.
+The held-out test split is used for final evaluation only.
 
-### 3. Evidence-Based Verifier
+Test labels are not used to fit the temperature, tune ranking rules, select score-combination weights, or revise verification prompts after observing final test outcomes.
 
-The generated answer is checked against the provided evidence before it is returned.
+## QA Baseline
 
-### 4. Combined Self-Verification Framework
+The extractive QA backbone is:
 
-The final system combines:
+`deepset/roberta-base-squad2`
 
-* answer confidence
-* calibrated confidence
-* evidence support
-* answerability prediction
+The raw baseline always returns an answer.
 
-The system then selects one of three actions:
-
-* `ANSWER`
-* `VERIFY`
-* `ABSTAIN`
-
-## Initial Dataset
-
-The initial benchmark will contain both answerable and unanswerable question-answering examples.
-
-SQuAD 2.0 is the primary candidate because it provides questions that can and cannot be answered from the supplied context.
-
-Additional benchmarks may be added only after the initial pipeline is validated.
-
-## Data Splits
-
-The official dataset splits will be preserved whenever possible.
-
-The development set will be used for:
-
-* threshold selection
-* calibration
-* hyperparameter decisions
-
-The test set will be used only for final evaluation.
-
-No test-set labels will be used during model or threshold development.
+For robustness, the QA pipeline requests the top five answer candidates and selects the first non-empty candidate with a valid character span. This prevents an empty top-ranked pipeline result from silently removing an example from evaluation.
 
 ## Confidence Estimation
 
-Confidence may be estimated using:
+Confidence is derived from the QA model's answer-vs-null margin.
 
-* model probability scores
-* answerability probability
-* response consistency
-* verifier output
-
-Raw and calibrated confidence will be evaluated separately.
-
-## Evidence Verification
-
-The evidence checker will estimate whether the generated answer is supported by the supplied context.
-
-Each answer will be categorized as:
-
-* `SUPPORTED`
-* `UNSUPPORTED`
-* `UNCERTAIN`
-
-The exact labeling rules will be defined before experiments begin.
-
-## Abstention Policy
-
-The decision policy will use confidence and evidence signals.
-
-A simplified initial rule is:
+For each prediction:
 
 ```text
-IF evidence is supported AND confidence is high:
-    ANSWER
-
-ELSE IF evidence is uncertain:
-    VERIFY
-
-ELSE:
-    ABSTAIN
+answer score = start logit + end logit
+null score   = CLS start logit + CLS end logit
+margin       = answer score - null score
 ```
 
-Decision thresholds will be selected using development data only.
+The uncalibrated confidence is the sigmoid of this margin.
 
-## Evaluation Procedure
+## Temperature Scaling
 
-Every system will be evaluated on the same examples.
+Temperature scaling is fitted on the calibration split only.
 
-Results will be reported across multiple confidence thresholds to measure the trade-off between coverage and risk.
+The learned temperature is:
 
-The combined framework will be compared against all baselines using identical evaluation metrics.
+`4.754804205196784`
+
+Calibration negative log-likelihood changed from:
+
+- before scaling: `1.011796`
+- after scaling: `0.422054`
+
+After fitting, the temperature is frozen and applied to held-out test predictions without refitting on test labels.
+
+## Question-Aware Semantic Verification
+
+The question-aware semantic V2 path converts each question-answer pair into a declarative claim and verifies that claim against the supplied context.
+
+Claim generation uses:
+
+`domenicrosati/QA2D-t5-base`
+
+Natural-language inference uses:
+
+`FacebookAI/roberta-large-mnli`
+
+Generated claims are checked with structural validity rules before NLI.Invalid claims are assigned a semantic score of 0 and are not passed to the NLI model.
+
+Gold answers are not used by the verifier.
+
+## Self-Verification
+
+The self-verification path separately evaluates whether the predicted answer is supported by the context.
+
+The verifier uses:
+
+`FacebookAI/roberta-large-mnli`
+
+Its raw score is defined on `[-1, 1]` and is mapped to `[0, 1]` before selective ranking:
+
+```text
+normalized self score = (raw self score + 1) / 2
+```
+
+The semantic and self-verification paths should be interpreted as separate verification signals, not statistically independent models, because they share the same NLI backbone.
+
+## Final Compared Methods
+
+Five primary ranking methods are evaluated:
+
+1. **Confidence only**
+2. **Question-aware semantic V2**
+3. **Confidence + question-aware semantic V2**
+4. **Self-verifier only**
+5. **Confidence + self-verifier**
+
+The two combined methods use a fixed equal-weight geometric mean:
+
+```text
+combined score = sqrt(score_a * score_b)
+```
+
+This combination rule is fixed in advance and is not tuned on held-out test labels.
+
+## Deterministic Ranking and Sample Sizes
+
+The final held-out evaluation uses 3,000 test examples.
+
+A single deterministic shuffled order with seed 17 is created and reused for every sample size.
+
+The evaluated nested subsets are:
+
+```text
+200 < 500 < 1000 < 2000 < 3000
+```
+
+The subsets are therefore nested prefixes of the same ordering rather than independently sampled sets. Predictions are ranked by score in descending order. Score ties are resolved deterministically by original index.
+
+## Evaluation Metrics
+
+The primary metric is area under the risk-coverage curve (AURC), where lower values indicate better selective ranking.
+
+The analysis also reports:
+
+- normalized AURC
+- matched-coverage risk
+- matched-coverage accuracy
+- full exact-match accuracy
+
+These metrics separate overall ranking quality from performance at individual operating points.
+
+## Statistical Uncertainty
+
+The final 3,000-example comparison uses 5,000 paired bootstrap resamples.
+
+Both the bootstrap seed and evaluation-order seed are 17. The analysis reports 95% percentile confidence intervals for each method and for paired AURC differences relative to confidence only.
+
+Bootstrap analysis is performed after the final predictions and scoring rules are fixed. It quantifies uncertainty on the observed held-out test sample and is not used for tuning.
 
 ## Leakage Controls
 
-To reduce evaluation leakage:
+The experimental design separates calibration from held-out evaluation.
 
-* test labels will not be used for threshold selection
-* prompts and rules will not be tuned on test failures
-* dataset splits will remain fixed
-* all preprocessing decisions will be documented
-* manual error analysis will be performed after final predictions are saved
+- Temperature scaling is fitted on the calibration split only.
+- The fitted temperature is frozen before test evaluation.
+- Held-out test labels are not used to tune combination weights.
+- The two combined ranking methods use a fixed equal-weight geometric mean.
+- Question-aware validation rules are not revised using held-out test performance.
+- Final sample ordering and bootstrap seeds are fixed deterministically.
+
+These controls are intended to prevent test-set result chasing.
 
 ## Reproducibility
 
-Experiments will use:
+The complete final workflow can be executed with:
 
-* fixed random seeds
-* versioned configuration files
-* recorded package versions
-* saved predictions
-* saved evaluation outputs
-* documented execution commands
+```bash
+DEVICE=cpu LIMIT=3000 bash scripts/reproduce_results.sh
+```
 
-## Methodological Limitation
+The reference software environment is recorded in `requirements-lock.txt`. Final lightweight evaluation artifacts are retained under `outputs/evaluation/final_sample_size_comparison/`, while large reproducible intermediate predictions and nested subset JSONL files are excluded from version control.
 
-This design evaluates reliability under controlled benchmark conditions.
+## Scope and Limitations
 
-It does not establish that the framework is safe or reliable across all domains, models, or real-world applications.
+The methodology applies to the experimental setting implemented in this repository: SQuAD v2, a pretrained extractive QA backbone, and the evaluated semantic/self-verification signals.
+
+The study does not establish a universal result about language-model reliability, hallucination, safety, or verification. Both verification paths also use the same MNLI backbone, so they are treated as separate verification signals rather than independent verifier models.

@@ -2,160 +2,160 @@
 
 ## Purpose
 
-This document defines the labels used to evaluate answerability, evidence support, correctness, and system decisions.
+This document defines the labels and correctness rules used in the final selective-QA evaluation.
 
-Answerability and evidence support must be evaluated separately.
+The final analysis distinguishes between:
 
-## 1. Answerability Labels
+- dataset answerability
+- exact-match QA correctness
+- question-aware claim validity
+- question-aware NLI labels
+- self-verification labels
+- ranking scores
 
-### `ANSWERABLE`
+These concepts are diagnostic signals and are not interchangeable.
 
-The provided context contains enough information to answer the question.
+## 1. Dataset Answerability
 
-### `UNANSWERABLE`
+### `is_answerable = true`
 
-The provided context does not contain enough information to answer the question reliably.
+The SQuAD v2 example has at least one reference answer in the supplied context.
 
-A question may be unanswerable even when the model knows the answer from external knowledge.
+### `is_answerable = false`
 
-## 2. Evidence-Support Labels
+The SQuAD v2 example is unanswerable under the benchmark annotation.
+
+Answerability is inherited from the dataset and is not manually re-annotated in the final experiment.
+
+## 2. QA Correctness
+
+Final QA correctness uses the same normalized exact-match logic as the evaluator.
+
+For answerable examples, a prediction is correct when its normalized text exactly matches at least one normalized reference answer.
+
+For unanswerable examples, a prediction is correct only when the normalized prediction is empty.
+
+The final evaluation does not use a `PARTIALLY_CORRECT` category and does not replace exact match with manual semantic-equivalence judgment.
+
+## 3. Question-Aware Claim Validity
+
+The question-aware semantic verifier first converts the question-answer pair into a declarative claim.
+
+### `qa_claim_valid = true`
+
+The generated claim passes the structural validation rules required before NLI scoring.
+
+### `qa_claim_valid = false`
+
+The claim fails one or more validation rules.
+
+Observed validation reasons include:
+
+- `ANSWER_NOT_PRESERVED`
+- `NUMBER_NOT_PRESERVED`
+- `QUESTION_FORM`
+- `NEGATION_NOT_PRESERVED`
+- `ANSWER_ONLY_FRAGMENT`
+- `TOO_SHORT`
+
+A single invalid claim can have multiple validation reasons.
+
+Invalid claims are assigned semantic score `0` and are not passed to the NLI model.
+
+## 4. Question-Aware NLI Labels
+
+For valid claims, the question-aware verifier uses the context as evidence and produces one of:
+
+### `ENTAILMENT`
+
+The NLI model predicts that the context supports the generated claim.
+
+### `CONTRADICTION`
+
+The NLI model predicts that the context contradicts the generated claim.
+
+### `NEUTRAL`
+
+The NLI model predicts that the context neither clearly entails nor contradicts the claim.
+
+### `INVALID_CLAIM`
+
+The claim failed structural validation before NLI evaluation.
+
+These labels are diagnostic evidence signals, not direct correctness labels.
+
+In the final 3,000-example held-out test set:
+
+| Label | Count |
+| --- | ---: |
+| `ENTAILMENT` | 1,622 |
+| `CONTRADICTION` | 713 |
+| `NEUTRAL` | 332 |
+| `INVALID_CLAIM` | 333 |
+
+## 5. Self-Verification Labels
+
+The self-verification path produces:
 
 ### `SUPPORTED`
 
-The answer is directly supported by the provided evidence.
-
-Requirements:
-
-* the evidence contains the necessary information
-* the answer does not add unsupported details
-* the answer does not contradict the context
-
-### `UNSUPPORTED`
-
-The answer is not justified by the provided evidence.
-
-This includes:
-
-* fabricated information
-* external knowledge not found in the context
-* contradictions with the evidence
-* unsupported additional details
-* answers to unanswerable questions
+The self-verification score is above the configured support threshold.
 
 ### `UNCERTAIN`
 
-The available evidence is incomplete, ambiguous, or insufficient for a confident support judgment.
+The score lies between the rejection and support thresholds.
 
-This label should not be used merely because annotation is difficult.
+### `REJECTED`
 
-## 3. Correctness Labels
+The score is below the configured rejection threshold.
 
-### `CORRECT`
+In the final 3,000-example held-out test set:
 
-The answer matches the reference answer or expresses an equivalent meaning.
+| Label | Count |
+| --- | ---: |
+| `SUPPORTED` | 886 |
+| `UNCERTAIN` | 1,791 |
+| `REJECTED` | 323 |
 
-### `INCORRECT`
-
-The answer:
-
-* contradicts the reference
-* answers a different question
-* contains a significant factual error
-* omits essential information
-
-### `PARTIALLY_CORRECT`
-
-The answer contains some correct information but is incomplete or includes a minor unsupported element.
-
-Partially correct answers will be analyzed separately and will not automatically be treated as fully correct.
-
-## 4. Reliability Labels
-
-### `RELIABLE`
-
-An answer is reliable when it is:
-
-* correct
-* supported by the provided evidence
-* appropriately confident
-
-### `UNRELIABLE`
-
-An answer is unreliable when it is:
-
-* incorrect
-* unsupported
-* misleadingly incomplete
-* produced with unjustifiably high confidence
-
-## 5. Decision Labels
-
-### `ANSWER`
-
-The system returns the answer because evidence support and confidence are sufficient.
-
-### `VERIFY`
-
-The system performs an additional verification step because reliability is unclear.
-
-### `ABSTAIN`
-
-The system does not provide a factual answer because available support is insufficient.
-
-## Decision Mapping
+The raw self-verification score is defined on `[-1, 1]` and is mapped to `[0, 1]` for ranking:
 
 ```text
-SUPPORTED + HIGH CONFIDENCE
-→ ANSWER
-
-UNCERTAIN SUPPORT OR MEDIUM CONFIDENCE
-→ VERIFY
-
-UNSUPPORTED OR LOW CONFIDENCE
-→ ABSTAIN
+normalized_self = (raw_self + 1) / 2
 ```
 
-This mapping is provisional. Final thresholds will be selected using development data.
+## 6. Ranking Signals
 
-## Annotation Rules
+The final experiment compares five ranking signals:
 
-Annotators must:
+1. calibrated confidence only
+2. question-aware semantic V2
+3. calibrated confidence + question-aware semantic V2
+4. self-verifier only
+5. calibrated confidence + self-verifier
 
-1. evaluate only the supplied question, context, and answer
-2. avoid using external knowledge
-3. judge correctness and evidence support separately
-4. record ambiguous cases instead of forcing certainty
-5. provide a short reason for `UNSUPPORTED` and `UNCERTAIN` labels
-
-## Example
-
-**Question:** Who developed the theory of relativity?
-
-**Context:** The passage discusses Isaac Newton's laws of motion but does not mention relativity.
-
-**Generated answer:** Albert Einstein.
-
-Labels:
+The two combined methods use a fixed equal-weight geometric mean:
 
 ```text
-Answerability: UNANSWERABLE
-Correctness: CORRECT
-Evidence Support: UNSUPPORTED
-Recommended Decision: ABSTAIN
+combined_score = sqrt(score_a * score_b)
 ```
 
-The answer is factually correct but unsupported by the supplied evidence.
+No label threshold or combination weight is tuned using held-out test labels.
 
-## Quality Control
+## 7. Interpretation Rules
 
-Before large-scale annotation, the project will conduct a small pilot study.
+The final analysis keeps the following concepts separate:
 
-If multiple annotators are used, the project will report:
+- **answerability** describes the benchmark example
+- **correctness** describes exact-match agreement with the reference answer
+- **claim validity** describes whether the generated declarative claim is structurally usable
+- **NLI labels** describe semantic support or contradiction relative to context
+- **self-verification labels** describe the verifier's support judgment
+- **ranking scores** determine selective ordering
 
-* annotation agreement
-* disagreement categories
-* final adjudication procedure
+For example, an `ENTAILMENT` label does not guarantee QA correctness, and a `REJECTED` label does not itself change the underlying QA prediction.
 
-## Current Status
+## 8. Scope
 
-These definitions are provisional and may be refined after dataset inspection and pilot annotation.
+This taxonomy documents the labels actually used in the final experiment.
+
+It does not define a general annotation standard for open-domain QA, conversational systems, or high-stakes applications.

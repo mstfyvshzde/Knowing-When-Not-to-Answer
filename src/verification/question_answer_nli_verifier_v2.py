@@ -1,5 +1,4 @@
-"""
-Question-aware semantic verifier V2.
+"""Question-aware semantic verifier V2.
 
 This implementation is dataset-independent.
 
@@ -17,7 +16,6 @@ Important
 - Gold/reference answers are never used.
 - Invalid claims are not passed to the NLI model.
 """
-
 from __future__ import annotations
 
 import argparse

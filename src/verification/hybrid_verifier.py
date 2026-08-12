@@ -7,10 +7,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from src.utils.io import (
-    load_jsonl,
-    save_jsonl
-)
+from src.utils.io import load_jsonl, save_jsonl
 
 DEFAULT_INPUT_PATH = Path(
     "outputs/predictions/calibration_with_semantic_evidence.jsonl"

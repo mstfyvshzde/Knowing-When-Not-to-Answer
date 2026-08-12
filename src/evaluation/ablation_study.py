@@ -43,7 +43,6 @@ from src.verification.hybrid_verifier import (
     get_lexical_score,
 )
 
-
 DEFAULT_INPUT_PATH = Path(
     "outputs/predictions/calibration_with_hybrid_evidence.jsonl"
 )

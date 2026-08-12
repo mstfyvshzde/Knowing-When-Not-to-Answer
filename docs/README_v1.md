@@ -1,3 +1,5 @@
+> **Historical planning document.** This file records an earlier stage of the project and is retained for research provenance. For the final protocol, methods, and results, see the main README, methodology, and evaluation documentation.
+
 # Knowing When Not to Answer
 
 <p align="center">

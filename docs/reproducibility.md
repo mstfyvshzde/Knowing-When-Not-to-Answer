@@ -1,144 +1,86 @@
 # Reproducibility
 
-## Goal
+## Reference Environment
 
-This project will be designed so that another researcher can reproduce the main experiments using the published code, configurations, and documented procedures.
+The final experiments were executed with:
 
-## Environment
+- Python **3.12.13**
+- exact package versions in `requirements-lock.txt`
+- supported dependency ranges in `requirements.txt`
+- project configuration in `pyproject.toml`
 
-The repository will record:
+The exact reference environment can be recreated with:
 
-* Python version
-* package versions
-* operating system information
-* hardware information where relevant
-* model and tokenizer versions
-
-Dependencies will be stored in:
-
-* `requirements.txt`
-* `pyproject.toml`
-* `environment.yml`
-
-## Randomness Control
-
-All experiments involving randomness will use fixed seeds.
-
-Seeds will be applied to:
-
-* Python
-* NumPy
-* PyTorch
-* dataset shuffling
-* sampling procedures
-
-The selected seed values will be recorded in configuration files.
-
-## Dataset Tracking
-
-The repository will document:
-
-* dataset name and version
-* original source
-* license or usage terms
-* preprocessing steps
-* filtering rules
-* dataset splits
-* excluded examples
-
-Raw datasets will not be modified directly.
-
-Processed datasets will be generated using reproducible scripts.
-
-## Configuration Management
-
-Experiment settings will be stored in versioned YAML configuration files.
-
-Configurations will include:
-
-* model settings
-* dataset settings
-* confidence thresholds
-* calibration settings
-* verification rules
-* evaluation parameters
-
-No important experiment setting should exist only inside a notebook.
-
-## Experiment Logging
-
-Each experiment will save:
-
-* configuration
-* random seed
-* model version
-* dataset split
-* start and completion time
-* predictions
-* confidence scores
-* final decisions
-* evaluation metrics
-
-## Saved Outputs
-
-The following outputs will be preserved:
-
-```text
-outputs/
-├── figures/
-├── logs/
-├── predictions/
-└── tables/
+```bash
+pip install -r requirements-lock.txt
 ```
 
-Saved predictions will allow evaluation metrics to be recalculated without rerunning the model.
+## Dataset and Split Control
 
-## Reproduction Scripts
+The project uses SQuAD v2. The original validation data is divided into separate calibration and held-out test partitions using a deterministic 50/50 stratified split with seed **17**.
 
-The repository will provide scripts for:
+Calibration data is used for temperature scaling only. The learned temperature is frozen before held-out test evaluation. Test labels are not used to fit calibration parameters, tune score-combination weights, or revise verifier rules.
 
-* downloading datasets
-* preparing data
-* running baselines
-* running the full framework
-* calculating metrics
-* reproducing tables and figures
+Dataset preparation is automated with:
 
-The main reproduction command will be documented after the pipeline is implemented.
+```bash
+bash scripts/download_dataset.sh
+```
 
-## Test-Set Protection
+## Deterministic Final Evaluation
 
-The test set will not be used for:
+The held-out evaluation uses **3,000** test examples.
 
-* threshold selection
-* calibration fitting
-* prompt development
-* error-driven system modification
+A deterministic ordering with seed **17** defines nested subsets:
 
-Final test predictions will be saved before manual error analysis begins.
+```text
+200 < 500 < 1000 < 2000 < 3000
+```
 
-## Reporting
+The same ordering is reused across all methods and sample sizes. Score ties are resolved by original deterministic index.
 
-Every reported result will include:
+## Statistical Uncertainty
 
-* system name
-* model version
-* dataset split
-* sample size
-* configuration file
-* random seed
-* evaluation metrics
+The final comparison uses **5,000 paired bootstrap resamples**, bootstrap seed **17**, evaluation-order seed **17**, and 95% percentile confidence intervals.
 
-Any failed or excluded experiment will be documented when it affects the interpretation of the results.
+Bootstrap analysis is performed only after final predictions are fixed and is used to quantify uncertainty rather than tune the system.
 
-## Reproducibility Limitations
+## Reproduction Commands
 
-Exact results may vary because of:
+Run the final experiment pipeline with:
 
-* hardware differences
-* nondeterministic operations
-* external model updates
-* API model changes
-* unavailable proprietary systems
+```bash
+DEVICE=cpu LIMIT=3000 bash scripts/run_all_experiments.sh
+```
 
-These factors will be reported clearly rather than hidden.
+Run the complete reproducibility workflow with:
+
+```bash
+DEVICE=cpu LIMIT=3000 bash scripts/reproduce_results.sh
+```
+
+`DEVICE` can be changed to `mps` or `cuda` when supported by the local PyTorch installation.
+
+## Saved Artifacts
+
+Final lightweight evaluation artifacts are stored under:
+
+```text
+outputs/evaluation/final_sample_size_comparison/
+```
+
+Large intermediate predictions and reproducible nested `subset.jsonl` files are intentionally excluded from version control.
+
+## Quality Checks
+
+The final local reproducibility run completed successfully with:
+
+- Ruff: **all checks passed**
+- Pytest: **115 passed**
+- repository-wide `src` coverage: **16%**
+
+Coverage is reported transparently for the full `src` tree rather than for metrics-only modules.
+
+## Scope
+
+Exact numerical reproduction can still depend on hardware, PyTorch backend behavior, and external model availability. The repository therefore records the software environment, deterministic seeds, model identifiers, execution scripts, and final evaluation artifacts needed to audit the reported results.

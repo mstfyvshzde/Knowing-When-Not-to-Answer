@@ -101,3 +101,6 @@ outputs/predictions/example.jsonl
 !outputs/tables/
 outputs/tables/*
 !outputs/tables/random_abstention_multi_seed_metrics.json
+
+# Reproducible nested evaluation subsets
+outputs/evaluation/**/subset.jsonl

@@ -1,0 +1,51 @@
+method,requested_coverage,actual_coverage,answered,total,selective_accuracy,risk,wrong_answered,correct_answered,abstained,correct_abstained,incorrect_abstained
+Confidence only,0.1,0.1,20,200,0.75,0.25,5,15,180,78,102
+Confidence only,0.2,0.2,40,200,0.8,0.2,8,32,160,61,99
+Confidence only,0.3,0.3,60,200,0.8333333333333334,0.16666666666666666,10,50,140,43,97
+Confidence only,0.4,0.4,80,200,0.825,0.175,14,66,120,27,93
+Confidence only,0.5,0.5,100,200,0.81,0.19,19,81,100,12,88
+Confidence only,0.6,0.6,120,200,0.7166666666666667,0.2833333333333333,34,86,80,7,73
+Confidence only,0.7,0.7,140,200,0.6357142857142857,0.36428571428571427,51,89,60,4,56
+Confidence only,0.8,0.8,160,200,0.58125,0.41875,67,93,40,0,40
+Confidence only,0.9,0.9,180,200,0.5166666666666667,0.48333333333333334,87,93,20,0,20
+Confidence only,1.0,1.0,200,200,0.465,0.535,107,93,0,0,0
+Question-aware semantic V2,0.1,0.1,20,200,0.65,0.35,7,13,180,80,100
+Question-aware semantic V2,0.2,0.2,40,200,0.625,0.375,15,25,160,68,92
+Question-aware semantic V2,0.3,0.3,60,200,0.65,0.35,21,39,140,54,86
+Question-aware semantic V2,0.4,0.4,80,200,0.6375,0.3625,29,51,120,42,78
+Question-aware semantic V2,0.5,0.5,100,200,0.61,0.39,39,61,100,32,68
+Question-aware semantic V2,0.6,0.6,120,200,0.5916666666666667,0.4083333333333333,49,71,80,22,58
+Question-aware semantic V2,0.7,0.7,140,200,0.5285714285714286,0.4714285714285714,66,74,60,19,41
+Question-aware semantic V2,0.8,0.8,160,200,0.49375,0.50625,81,79,40,14,26
+Question-aware semantic V2,0.9,0.9,180,200,0.4666666666666667,0.5333333333333333,96,84,20,9,11
+Question-aware semantic V2,1.0,1.0,200,200,0.465,0.535,107,93,0,0,0
+Confidence + question-aware semantic V2,0.1,0.1,20,200,0.75,0.25,5,15,180,78,102
+Confidence + question-aware semantic V2,0.2,0.2,40,200,0.775,0.225,9,31,160,62,98
+Confidence + question-aware semantic V2,0.3,0.3,60,200,0.8166666666666667,0.18333333333333332,11,49,140,44,96
+Confidence + question-aware semantic V2,0.4,0.4,80,200,0.7625,0.2375,19,61,120,32,88
+Confidence + question-aware semantic V2,0.5,0.5,100,200,0.69,0.31,31,69,100,24,76
+Confidence + question-aware semantic V2,0.6,0.6,120,200,0.6166666666666667,0.38333333333333336,46,74,80,19,61
+Confidence + question-aware semantic V2,0.7,0.7,140,200,0.55,0.45,63,77,60,16,44
+Confidence + question-aware semantic V2,0.8,0.8,160,200,0.50625,0.49375,79,81,40,12,28
+Confidence + question-aware semantic V2,0.9,0.9,180,200,0.4666666666666667,0.5333333333333333,96,84,20,9,11
+Confidence + question-aware semantic V2,1.0,1.0,200,200,0.465,0.535,107,93,0,0,0
+Self-verifier only,0.1,0.1,20,200,0.65,0.35,7,13,180,80,100
+Self-verifier only,0.2,0.2,40,200,0.675,0.325,13,27,160,66,94
+Self-verifier only,0.3,0.3,60,200,0.6166666666666667,0.38333333333333336,23,37,140,56,84
+Self-verifier only,0.4,0.4,80,200,0.6375,0.3625,29,51,120,42,78
+Self-verifier only,0.5,0.5,100,200,0.57,0.43,43,57,100,36,64
+Self-verifier only,0.6,0.6,120,200,0.575,0.425,51,69,80,24,56
+Self-verifier only,0.7,0.7,140,200,0.5642857142857143,0.4357142857142857,61,79,60,14,46
+Self-verifier only,0.8,0.8,160,200,0.5375,0.4625,74,86,40,7,33
+Self-verifier only,0.9,0.9,180,200,0.5055555555555555,0.49444444444444446,89,91,20,2,18
+Self-verifier only,1.0,1.0,200,200,0.465,0.535,107,93,0,0,0
+Confidence + self-verifier,0.1,0.1,20,200,0.85,0.15,3,17,180,76,104
+Confidence + self-verifier,0.2,0.2,40,200,0.825,0.175,7,33,160,60,100
+Confidence + self-verifier,0.3,0.3,60,200,0.8,0.2,12,48,140,45,95
+Confidence + self-verifier,0.4,0.4,80,200,0.8125,0.1875,15,65,120,28,92
+Confidence + self-verifier,0.5,0.5,100,200,0.79,0.21,21,79,100,14,86
+Confidence + self-verifier,0.6,0.6,120,200,0.7,0.3,36,84,80,9,71
+Confidence + self-verifier,0.7,0.7,140,200,0.6285714285714286,0.37142857142857144,52,88,60,5,55
+Confidence + self-verifier,0.8,0.8,160,200,0.56875,0.43125,69,91,40,2,38
+Confidence + self-verifier,0.9,0.9,180,200,0.5166666666666667,0.48333333333333334,87,93,20,0,20
+Confidence + self-verifier,1.0,1.0,200,200,0.465,0.535,107,93,0,0,0

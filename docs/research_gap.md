@@ -1,50 +1,39 @@
 # Research Gap
 
-## Provisional Gap
+## Established Context
 
-Existing research separately studies:
+Selective prediction, confidence calibration, selective question answering, answerability detection, and evidence verification are already established research areas.
 
-* confidence estimation
-* hallucination detection
-* evidence verification
-* answerability prediction
-* selective prediction and abstention
+Accordingly, this project does not claim that abstention, calibration, or self-verification is itself new.
 
-However, this project will investigate whether these components can be combined into a single, reproducible decision framework for question answering.
+## Specific Research Gap
 
-The proposed system will not only predict an answer. It will decide whether to:
+The specific question addressed here is whether adding semantic or self-verification signals actually improves selective QA ranking when the comparison is made against a strong calibrated-confidence baseline under the same held-out evaluation conditions.
 
-* answer directly
-* request additional verification
-* abstain from answering
+This comparison is important because a verifier can appear diagnostically informative on individual examples without necessarily improving the global risk-coverage ordering.
 
-## Research Need
+## Contribution
 
-A useful reliability framework should evaluate more than final-answer accuracy.
+The project provides a controlled and reproducible comparison of five ranking methods:
 
-It should also measure:
+1. calibrated confidence only
+2. question-aware semantic verification
+3. confidence + question-aware semantic verification
+4. self-verifier only
+5. confidence + self-verifier
 
-* whether the answer is supported by evidence
-* whether confidence reflects actual correctness
-* whether abstention reduces high-confidence errors
-* how reliability changes as answer coverage decreases
-* which verification component contributes most to performance
+The design includes separate calibration and held-out test partitions, fixed score-combination rules, deterministic nested evaluation subsets, AURC and normalized AURC, matched-coverage analysis, and paired bootstrap uncertainty analysis.
 
-## Intended Contribution
+## Observed Outcome
 
-The project aims to provide an experimentally controlled comparison between:
+In the final 3,000-example held-out evaluation, confidence only achieves the lowest global AURC among the five evaluated methods. The same ordering favors confidence only at every nested sample size.
 
-1. a raw answer-generation baseline
-2. a confidence-based abstention baseline
-3. an evidence-based verification system
-4. a combined self-verification framework
+The finding therefore does not support the hypothesis that adding the evaluated verification signals improves global selective ranking in this experimental setting.
 
-## Important Limitation
+## Scope
 
-This research gap is provisional.
+The supported conclusion is deliberately narrow:
 
-It will be revised after the literature review confirms:
+> Adding semantic or self-verification signals does not necessarily improve selective QA ranking over a strong calibrated-confidence baseline.
 
-* which parts have already been studied
-* which benchmark settings remain underexplored
-* whether the proposed combination provides a meaningful contribution
+This claim is limited to the SQuAD v2 held-out evaluation, the extractive QA backbone, and the verification signals implemented in this repository. It does not establish a general result about LLM reliability, safety, or the effectiveness of verification in other settings.

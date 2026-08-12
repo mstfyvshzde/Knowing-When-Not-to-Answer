@@ -2,28 +2,46 @@
 
 ## Research Problem
 
-Large language models often generate incorrect or unsupported answers with high confidence. Standard question-answering systems are usually optimized to produce an answer, even when the available evidence is insufficient.
+Question-answering systems can produce incorrect predictions even when their confidence scores are relatively high. In selective question answering, the goal is therefore not only to predict an answer, but also to rank predictions so that the system can answer higher-reliability cases first and abstain as coverage decreases.
 
-This project investigates whether an AI system can evaluate the reliability of its own response before presenting it to the user.
+This project studies whether additional verification signals improve that selective ranking over a strong calibrated-confidence baseline.
 
 ## Core Research Question
 
-Can an AI system detect when its answer is unsupported, uncertain, or unsafe to trust?
+Does adding question-aware semantic verification or self-verification improve selective QA ranking over calibrated confidence alone?
 
-## Proposed Decision Space
+## Operational Setting
 
-The system will select one of three actions:
+The final evaluation treats each method as a scoring function over the same held-out QA predictions.
 
-1. **Answer** — provide the response when sufficient evidence and confidence are available.
-2. **Verify** — perform an additional verification step when reliability is unclear.
-3. **Abstain** — return `I don't know` when the answer cannot be supported.
+Higher-scored predictions are answered first. Lower-scored predictions are progressively abstained from as coverage decreases.
+
+The five evaluated ranking methods are:
+
+1. calibrated confidence only
+2. question-aware semantic verification
+3. calibrated confidence + question-aware semantic verification
+4. self-verifier only
+5. calibrated confidence + self-verifier
+
+The two combined methods use a fixed equal-weight geometric mean and are not tuned on held-out test labels.
+
+## Evaluation Objective
+
+The primary objective is to compare how effectively the five scoring methods order correct and incorrect predictions across the risk-coverage curve.
+
+The primary metric is AURC, where lower values indicate better selective ranking. Normalized AURC and matched-coverage risk and accuracy are reported as complementary measures.
 
 ## Scope
 
-The study focuses on controlled question-answering benchmarks containing both answerable and unanswerable examples.
+The study is restricted to SQuAD v2, a pretrained extractive QA backbone, and the verification signals implemented in this repository.
 
-The project does not claim to solve hallucination across all language models or real-world domains.
+It does not claim to solve hallucination, establish general language-model reliability, or demonstrate safety in real-world or high-stakes applications.
 
-## Research Objective
+## Final Framing
 
-The objective is to determine whether confidence estimation and evidence verification can reduce unsupported and overconfident answers while maintaining useful answer coverage.
+The supported conclusion is intentionally narrow:
+
+> Adding semantic or self-verification signals does not necessarily improve selective QA ranking over a strong calibrated-confidence baseline.
+
+This statement describes the observed experimental setting and is not a universal claim about verification methods.

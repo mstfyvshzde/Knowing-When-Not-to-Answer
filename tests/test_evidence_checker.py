@@ -8,8 +8,8 @@ import pytest
 from src.verification.evidence_checker import (
     answer_overlap_f1,
     classify_evdence,
-    summarize_evidence,
     normalize_answe,
+    summarize_evidence,
 )
 
 

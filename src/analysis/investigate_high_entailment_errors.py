@@ -13,7 +13,6 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_INPUT_PATH = Path(
     "outputs/analysis/question_aware_verifier/high_entailment_incorrect.jsonl"
 )

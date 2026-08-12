@@ -1,0 +1,6 @@
+sample_size,seed,high_entailment_threshold,question_aware_score_field,incorrect_predictions,valid_claims,invalid_claims,invalid_claim_rate,high_entailment_predictions,high_entailment_incorrect,high_entailment_incorrect_rate_among_incorrect,error_rate_within_high_entailment
+200,17,0.8,qa_entailment_probability,107,175,25,0.125,106,42,0.3925233644859813,0.39622641509433965
+500,17,0.8,qa_entailment_probability,273,444,56,0.112,232,81,0.2967032967032967,0.34913793103448276
+1000,17,0.8,qa_entailment_probability,562,892,108,0.108,447,153,0.2722419928825623,0.3422818791946309
+2000,17,0.8,qa_entailment_probability,1141,1770,230,0.115,852,297,0.26029798422436456,0.3485915492957746
+3000,17,0.8,qa_entailment_probability,1730,2667,333,0.111,1300,464,0.2682080924855491,0.3569230769230769

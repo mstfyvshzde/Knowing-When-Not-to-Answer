@@ -23,7 +23,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 
-
 INPUT = Path(
     "outputs/predictions/calibration_with_question_aware_semantic_evidence_v2.jsonl"
 )

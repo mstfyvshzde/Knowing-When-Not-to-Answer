@@ -2,95 +2,84 @@
 
 ## Research Purpose
 
-This project investigates whether AI systems can reduce unreliable responses by deciding when to answer, verify, or abstain.
+This project studies selective question answering: whether a QA system can reduce selective risk by ranking higher-reliability predictions ahead of lower-reliability predictions and abstaining as coverage decreases.
 
-The project is intended for academic research and does not claim to create a universally safe or trustworthy AI system.
+The work is a controlled benchmark study. It does not establish that the evaluated system is safe, trustworthy, or suitable for deployment in high-stakes settings.
 
 ## Potential Benefits
 
-A reliable abstention mechanism may help reduce:
+Selective prediction can be useful when an incorrect answer is more costly than abstention. This study contributes a reproducible comparison between calibrated confidence and additional semantic/self-verification signals.
 
-* unsupported answers
-* high-confidence errors
-* misleading responses
-* inappropriate certainty
-
-The research may also provide clearer evaluation methods for studying reliability beyond answer accuracy.
+A key benefit of the study is methodological transparency: negative results, failure modes, uncertainty estimates, and limitations are reported rather than hidden.
 
 ## Potential Risks
 
-Abstention mechanisms can introduce new risks.
+Verification and abstention can create their own failure modes.
 
-A system may:
+A verifier can:
 
-* refuse answerable questions unnecessarily
-* behave differently across domains or demographic groups
-* create a false impression of safety
-* rely on incomplete or biased evidence
-* assign misleading confidence scores
+- reject correct answers
+- support incorrect answers
+- introduce additional model errors
+- create a false impression that verification guarantees correctness
+- reduce useful coverage without improving global selective ranking
 
-## User Trust
+The final error analysis demonstrates that these failure modes occur in the evaluated system.
 
-An abstaining system should communicate uncertainty clearly.
+## Interpretation of Verification
 
-The message `I don't know` must not imply that the system has performed a complete or authoritative safety assessment.
+Verifier labels such as `ENTAILMENT`, `SUPPORTEDa, or `REJECTED` are diagnostic model outputs. They are not guarantees of factual correctness or safety.
 
-Users should be informed that:
+For example, the held-out analysis contains incorrect QA predictions labeled as semantically supported, as well as correct QA predictions receiving low semantic-support scores.
 
-* confidence is imperfect
-* evidence may be incomplete
-* verification can fail
-* abstention does not guarantee safety
+The repository therefore avoids presenting verifier outputs as authoritative judgments.
 
 ## Fairness
 
-The project will examine whether abstention and error rates differ across available dataset categories.
+The final experiments do not include a dedicated demographic fairness evaluation.
 
-If demographic or domain-based analysis is possible, performance differences will be reported rather than hidden within aggregate metrics.
+SQuAD v2 is not used here to support claims about demographic parity, disparate impact, or fairness across protected groups. No broad fairness claim is made from aggregate benchmark performance.
 
-The project will not make broad fairness claims without appropriate data.
+A separate dataset and evaluation design would be required for such conclusions.
 
-## Data Use
+## Data and Human Subjects
 
-Only datasets with documented research usage conditions will be used.
+The study uses an existing public question-answering benchmark and generated model outputs. No new human-subject experiment, user study, or collection of sensitive participant data was conducted for the final evaluation.
 
-The repository will document:
-
-* dataset source
-* license or usage terms
-* preprocessing steps
-* excluded examples
-* known dataset limitations
-
-Sensitive personal data will not be intentionally collected.
+Dataset preparation, splits, preprocessing, and evaluation procedures are documented in the repository for reproducibility.
 
 ## High-Stakes Applications
 
-The framework will not be presented as suitable for medical, legal, financial, or safety-critical decision-making.
+The evaluated framework is not presented as suitable for medical, legal, financial, safety-critical, or other high-stakes decision-making.
 
-Controlled benchmark improvements do not establish real-world safety.
+Performance on SQuAD v2 does not establish real-world safety, factual reliability, or robustness under distribution shift.
 
-## Transparency
+## Transparency and Negative Results
 
-The final report will disclose:
+The final report records:
 
-* selected models
-* benchmark limitations
-* verification failures
-* threshold choices
-* computational constraints
-* negative or inconclusive results
+- the pretrained QA and verification models
+- the calibration/test separation
+- deterministic seeds
+- fixed score-combination rules
+- held-out AURC and normalized AURC results
+- paired bootstrap uncertainty intervals
+- verifier failure modes
+- methodological limitations
 
-Failure cases will be reported alongside successful examples.
+The main hypothesis is not supported by the final experiment: the evaluated semantic and self-verification signals do not improve global selective ranking over calibrated confidence in this setting.
+
+This negative result is reported directly rather than reframed as a positive performance claim.
 
 ## Responsible Claims
 
-The project will not claim to:
+The project does not claim to:
 
-* solve hallucination
-* guarantee factual correctness
-* make language models safe
-* replace human verification
-* generalize beyond the tested conditions
+- solve hallucination
+- guarantee factual correctness
+- establish general LLM reliability
+- guarantee safe abstention
+- replace human verification
+- generalize beyond the tested benchmark, QA backbone, and verifier implementations
 
-All conclusions will remain limited to the experiments conducted.
+All conclusions are restricted to the experimental setting documented in this repository.

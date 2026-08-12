@@ -1,0 +1,6 @@
+method,score_field,total_records,full_accuracy,aurc,normalized_aurc
+Confidence only,calibrated_confidence,2000,0.4295,0.2825095919532839,0.20629311218701862
+Question-aware semantic V2,qa_entailment_probability; invalid claims=0,2000,0.4295,0.3881333876631325,0.4973942455214974
+Confidence + question-aware semantic V2,sqrt(calibrated_confidence * qa_entailment_probability); invalid claims=0,2000,0.4295,0.33050444835507636,0.33856782357087234
+Self-verifier only,normalized(self_verification_score),2000,0.4295,0.43464368127481423,0.6255774744150364
+Confidence + self-verifier,sqrt(calibrated_confidence * normalized(self_verification_score)),2000,0.4295,0.3018513970350422,0.2595994845077156

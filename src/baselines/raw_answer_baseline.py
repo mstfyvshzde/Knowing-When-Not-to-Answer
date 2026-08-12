@@ -114,15 +114,30 @@ def run_raw_baseline(
 
     # loops through every dataset example and also gives each one a visible number starting from 1.
     for index, example in enumerate(dataset, start=1):
-        # sends the current question and context to the QA model, asks for only the best answer with top_k=1, and forces the model to return an answer instead of choosing an impossible-answer option with handle_impossible_answer=False.
-        result = qa_model(
+        candidates = qa_model(
             question=example["question"],
             context=example["context"],
-            # return only the single best answer candidate.
-            top_k=1,
-            # do not allow the model to return “no answer”; force it to choose an answer from the context.
+            top_k=5,
             handle_impossible_answer=False,
         )
+
+        if isinstance(candidates, dict):
+            candidates = [candidates]
+
+        result = next(
+            (
+                candidate
+                for candidate in candidates
+                if str(candidate["answer"]).strip()
+                and int(candidate["end"]) > int(candidate["start"])
+            ),
+            None,
+        )
+
+        if result is None:
+            raise ValueError(
+                f"No valid non-empty answer span found for example: {example['id']}"
+            )
 
         # This is one prediction record stored as a Python dictionary. It collects everything about one question, the model’s answer, and the experiment setup.
         prediction = {

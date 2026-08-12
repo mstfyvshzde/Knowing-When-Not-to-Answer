@@ -70,6 +70,8 @@ OLD_SEMANTIC_SCORE_FIELDS = (
 
 QUESTION_AWARE_SCORE_FIELDS = ("qa_entailment_probability",)
 
+SELF_VERIFICATION_SCORE_FIELDS = ("self_verification_score",)
+
 QUESTION_AWARE_VALIDITY_FIELDS = ("qa_claim_valid",)
 
 PREDICTION_FIELDS = (
@@ -515,6 +517,25 @@ def extract_question_aware_score(
     return score
 
 
+def extract_self_verification_score(
+    record: dict[str, Any],
+    score_field: str,
+) -> float | None:
+    score = coerce_float(record.get(score_field))
+
+    if score is None:
+        return None
+
+    score = max(-1.0, min(1.0, score))
+
+    # self_verification_score:
+    # -1.0 -> tamamen reject
+    #  0.0 -> uncertain
+    # +1.0 -> tamamen supported
+    #
+    # Evaluation sistemimiz 0-1 score beklediği için:
+    # [-1, 1] -> [0, 1]
+    return (score + 1.0) / 2.0
 
 # make scores non-negative -> multiply them -> take the square root -> return the combined score.
 def geometric_mean_score(
@@ -1033,35 +1054,52 @@ def parse_coverage_levels(
 def evaluate_ablation(
     input_path: str | Path,
     output_directory: str | Path,
-    coverage_levels: Sequence[float]
+    coverage_levels: Sequence[float],
 ) -> list[MethodResult]:
     records = load_jsonl(input_path)
 
-    correctness = [infer_correctness(record) for record in records]
+    correctness = [
+        infer_correctness(record)
+        for record in records
+    ]
+
+    # ---------------------------------------------------------
+    # Detect available score fields
+    # ---------------------------------------------------------
 
     confidence_field = find_available_field(
         records,
-        CONFIDENCE_FIELDS
+        CONFIDENCE_FIELDS,
     )
 
     lexical_field = find_available_field(
         records,
-        LEXICAL_SCORE_FIELDS
+        LEXICAL_SCORE_FIELDS,
     )
 
     old_semantic_field = find_available_field(
         records,
-        OLD_SEMANTIC_SCORE_FIELDS
+        OLD_SEMANTIC_SCORE_FIELDS,
     )
 
     question_aware_field = find_available_field(
         records,
-        QUESTION_AWARE_SCORE_FIELDS
+        QUESTION_AWARE_SCORE_FIELDS,
     )
+
+    self_verification_field = find_available_field(
+        records,
+        SELF_VERIFICATION_SCORE_FIELDS,
+    )
+
+    # ---------------------------------------------------------
+    # Validate required fields
+    # ---------------------------------------------------------
 
     if confidence_field is None:
         raise ValueError(
-            f"No confidence score field was found. Checked: {CONFIDENCE_FIELDS}"
+            "No confidence score field was found. "
+            f"Checked: {CONFIDENCE_FIELDS}"
         )
 
     if question_aware_field is None:
@@ -1070,7 +1108,17 @@ def evaluate_ablation(
             f"Checked: {QUESTION_AWARE_SCORE_FIELDS}"
         )
 
-    confidence_scores = [
+    if self_verification_field is None:
+        raise ValueError(
+            "No self-verification score field was found. "
+            f"Checked: {SELF_VERIFICATION_SCORE_FIELDS}"
+        )
+
+    # ---------------------------------------------------------
+    # Confidence scores
+    # ---------------------------------------------------------
+
+    confidence_scores_optional = [
         extract_numeric_score(
             record,
             confidence_field,
@@ -1078,92 +1126,198 @@ def evaluate_ablation(
         for record in records
     ]
 
-    if any(score is None for score in confidence_scores):
-        missing_count = sum(score is None for score in confidence_scores)
+    if any(
+        score is None
+        for score in confidence_scores_optional
+    ):
+        missing_count = sum(
+            score is None
+            for score in confidence_scores_optional
+        )
 
         raise ValueError(
             f"Confidence field '{confidence_field}' is missing "
             f"or non-numeric in {missing_count} records."
         )
 
-    confidence_scores_clean = [
-        float(score) for score in confidence_scores if score is not None
+    confidence_scores = [
+        float(score)
+        for score in confidence_scores_optional
+        if score is not None
     ]
+
+    # ---------------------------------------------------------
+    # Question-aware semantic V2 scores
+    # ---------------------------------------------------------
 
     question_aware_scores = [
         extract_question_aware_score(
             record,
-            question_aware_field
+            question_aware_field,
         )
         for record in records
     ]
 
-    combined_scores = [
+    # ---------------------------------------------------------
+    # Self-verification scores
+    # ---------------------------------------------------------
+
+    self_verification_scores_optional = [
+        extract_self_verification_score(
+            record,
+            self_verification_field,
+        )
+        for record in records
+    ]
+
+    if any(
+        score is None
+        for score in self_verification_scores_optional
+    ):
+        missing_count = sum(
+            score is None
+            for score in self_verification_scores_optional
+        )
+
+        raise ValueError(
+            f"Self-verification field "
+            f"'{self_verification_field}' is missing "
+            f"or non-numeric in {missing_count} records."
+        )
+
+    self_verification_scores = [
+        float(score)
+        for score in self_verification_scores_optional
+        if score is not None
+    ]
+
+    # ---------------------------------------------------------
+    # Combined scores
+    # ---------------------------------------------------------
+
+    confidence_question_aware_scores = [
         geometric_mean_score(
             confidence_score,
-            semantic_score
+            semantic_score,
         )
         for confidence_score, semantic_score in zip(
-            confidence_scores_clean,
-            question_aware_scores
+            confidence_scores,
+            question_aware_scores,
         )
     ]
+
+    confidence_self_scores = [
+        geometric_mean_score(
+            confidence_score,
+            self_score,
+        )
+        for confidence_score, self_score in zip(
+            confidence_scores,
+            self_verification_scores,
+        )
+    ]
+
+    # ---------------------------------------------------------
+    # Main methods
+    # ---------------------------------------------------------
 
     methods: list[
         tuple[
             str,
             str,
-            list[float]
+            list[float],
         ]
     ] = [
         (
             "Confidence only",
             confidence_field,
-            confidence_scores_clean
+            confidence_scores,
         ),
         (
             "Question-aware semantic V2",
-            (f"{question_aware_field}; invalid claims=0"),
-            question_aware_scores
+            (
+                f"{question_aware_field}; "
+                "invalid claims=0"
+            ),
+            question_aware_scores,
         ),
         (
             "Confidence + question-aware semantic V2",
-            (f"sqrt({confidence_field} * {question_aware_field}); invalid claims=0"),
-            combined_scores
-        )
+            (
+                f"sqrt({confidence_field} * "
+                f"{question_aware_field}); "
+                "invalid claims=0"
+            ),
+            confidence_question_aware_scores,
+        ),
+        (
+            "Self-verifier only",
+            (
+                f"normalized("
+                f"{self_verification_field})"
+            ),
+            self_verification_scores,
+        ),
+        (
+            "Confidence + self-verifier",
+            (
+                f"sqrt("
+                f"{confidence_field} * "
+                f"normalized({self_verification_field})"
+                f")"
+            ),
+            confidence_self_scores,
+        ),
     ]
+
+    # ---------------------------------------------------------
+    # Optional lexical verifier
+    # ---------------------------------------------------------
 
     if lexical_field is not None:
         lexical_scores_optional = [
             extract_numeric_score(
                 record,
-                lexical_field
+                lexical_field,
             )
             for record in records
         ]
 
-        if all(score is not None for score in lexical_scores_optional):
+        if all(
+            score is not None
+            for score in lexical_scores_optional
+        ):
+            lexical_scores = [
+                float(score)
+                for score in lexical_scores_optional
+                if score is not None
+            ]
+
             methods.insert(
                 1,
                 (
                     "Lexical verifier only",
                     lexical_field,
-                    [
-                        float(score)
-                        for score in lexical_scores_optional
-                        if score is not None
-                    ]
-                )
+                    lexical_scores,
+                ),
             )
 
         else:
-            print(f"Skipping lexical verifier: field '{lexical_field}' is incomplete.")
+            print(
+                "Skipping lexical verifier: "
+                f"field '{lexical_field}' is incomplete."
+            )
+
+    # ---------------------------------------------------------
+    # Optional old semantic verifier
+    # ---------------------------------------------------------
 
     if old_semantic_field is not None:
         if old_semantic_field == question_aware_field:
             print(
-                "Skipping old semantic verifier because its detected "
-                "field is identical to the question-aware field."
+                "Skipping old semantic verifier because its "
+                "detected field is identical to the "
+                "question-aware field."
             )
 
         else:
@@ -1175,110 +1329,183 @@ def evaluate_ablation(
                 for record in records
             ]
 
-            if all(score is not None for score in old_semantic_scores_optional):
-                insertion_index = 2 if lexical_field is not None else 1
+            if all(
+                score is not None
+                for score in old_semantic_scores_optional
+            ):
+                old_semantic_scores = [
+                    float(score)
+                    for score in old_semantic_scores_optional
+                    if score is not None
+                ]
+
+                insertion_index = (
+                    2
+                    if lexical_field is not None
+                    else 1
+                )
 
                 methods.insert(
                     insertion_index,
                     (
                         "Old semantic verifier only",
                         old_semantic_field,
-                        [
-                            float(score)
-                            for score in old_semantic_scores_optional
-                            if score is not None
-                        ]
-                    )
+                        old_semantic_scores,
+                    ),
                 )
 
             else:
                 print(
-                    f"Skipping old semantic verifier: field "
-                    f"'{old_semantic_field}' is incomplete."
+                    "Skipping old semantic verifier: "
+                    f"field '{old_semantic_field}' "
+                    "is incomplete."
                 )
 
+    # ---------------------------------------------------------
+    # Evaluate every method
+    # ---------------------------------------------------------
+
     results: list[MethodResult] = []
+
     curves: dict[
         str,
-        list[dict[str, float | int]]
+        list[dict[str, float | int]],
     ] = {}
 
     for (
         method_name,
         field_description,
-        scores
+        scores,
     ) in methods:
+
         result, curve = evaluate_method(
             method_name=method_name,
             score_field_description=field_description,
             correctness=correctness,
             scores=scores,
-            coverage_levels=coverage_levels
+            coverage_levels=coverage_levels,
         )
 
         results.append(result)
+
         curves[method_name] = curve
 
-    output_directory_path = Path(output_directory)
+    # ---------------------------------------------------------
+    # Output directory
+    # ---------------------------------------------------------
+
+    output_directory_path = Path(
+        output_directory
+    )
 
     output_directory_path.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
+
+    # ---------------------------------------------------------
+    # Summary JSON
+    # ---------------------------------------------------------
 
     summary_payload = {
         "input_path": str(input_path),
+
         "total_records": len(records),
+
         "correct_predictions": sum(correctness),
-        "incorrect_predictions": (len(correctness) - sum(correctness)),
-        "full_accuracy": (sum(correctness) / len(correctness)),
+
+        "incorrect_predictions": (
+            len(correctness)
+            - sum(correctness)
+        ),
+
+        "full_accuracy": (
+            sum(correctness)
+            / len(correctness)
+        ),
+
         "detected_fields": {
             "confidence": confidence_field,
             "lexical": lexical_field,
             "old_semantic": old_semantic_field,
-            "question_aware_semantic": (question_aware_field),
+            "question_aware_semantic": question_aware_field,
+            "self_verification": self_verification_field,
         },
-        "combination_rule": (
-            "equal-weight geometric mean: sqrt(confidence * qa_entailment)"
+
+        "combination_rules": {
+            "confidence_question_aware": (
+                "equal-weight geometric mean: "
+                "sqrt(confidence * qa_entailment)"
+            ),
+
+            "confidence_self_verification": (
+                "equal-weight geometric mean: "
+                "sqrt(confidence * normalized_self_verification)"
+            ),
+        },
+
+        "self_verification_normalization": (
+            "self_verification_score [-1, 1] "
+            "mapped linearly to [0, 1]"
         ),
-        "invalid_claim_policy": ("qa semantic score = 0.0"),
+
+        "invalid_claim_policy": (
+            "qa semantic score = 0.0"
+        ),
+
         "methods": [
             {
                 **asdict(result),
+
                 "matched_coverage": [
-                    asdict(metric) for metric in result.matched_coverage
-                ]
+                    asdict(metric)
+                    for metric in result.matched_coverage
+                ],
             }
             for result in results
-        ]
+        ],
     }
+
+    # ---------------------------------------------------------
+    # Save outputs
+    # ---------------------------------------------------------
 
     save_json(
         summary_payload,
-        output_directory_path / "ablation_summary.json"
+        output_directory_path
+        / "ablation_summary.json",
     )
 
     save_summary_csv(
         results,
-        output_directory_path / "ablation_summary.csv"
+        output_directory_path
+        / "ablation_summary.csv",
     )
 
     save_matched_coverage_csv(
         results,
-        output_directory_path / "matched_coverage.csv"
+        output_directory_path
+        / "matched_coverage.csv",
     )
 
     save_curve_csv(
         curves,
-        output_directory_path / "risk_coverage_curves.csv"
+        output_directory_path
+        / "risk_coverage_curves.csv",
     )
 
     plot_risk_coverage_curves(
         curves,
-        output_directory_path / "risk_coverage_curves.png"
+        output_directory_path
+        / "risk_coverage_curves.png",
     )
 
+    # ---------------------------------------------------------
+    # Terminal output
+    # ---------------------------------------------------------
+
     print_summary(results)
+
     print_matched_coverage(results)
 
     print("\n" + "=" * 88)
@@ -1287,15 +1514,30 @@ def evaluate_ablation(
 
     print("=" * 88)
 
-    print(output_directory_path / "ablation_summary.json")
+    print(
+        output_directory_path
+        / "ablation_summary.json"
+    )
 
-    print(output_directory_path / "ablation_summary.csv")
+    print(
+        output_directory_path
+        / "ablation_summary.csv"
+    )
 
-    print(output_directory_path / "matched_coverage.csv")
+    print(
+        output_directory_path
+        / "matched_coverage.csv"
+    )
 
-    print(output_directory_path / "risk_coverage_curves.csv")
+    print(
+        output_directory_path
+        / "risk_coverage_curves.csv"
+    )
 
-    print(output_directory_path / "risk_coverage_curves.png")
+    print(
+        output_directory_path
+        / "risk_coverage_curves.png"
+    )
 
     return results
 

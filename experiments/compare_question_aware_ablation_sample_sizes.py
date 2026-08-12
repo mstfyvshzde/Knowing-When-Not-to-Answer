@@ -61,7 +61,7 @@ DEFAULT_SAMPLE_SIZES = (200, 500, 1000, 2000, 5000)
 DEFAULT_OUTPUT_DIRECTORY = Path(
     "outputs/evaluation/question_aware_ablation_sample_sizes"
 )
-DEFAULT_SEED = 42
+DEFAULT_SEED = 17
 DEFAULT_HIGH_ENTAILMENT_THRESHOLD = 0.80
 
 

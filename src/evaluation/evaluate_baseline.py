@@ -16,7 +16,6 @@ from src.utils.io import (
     save_jsonl,
 )
 
-
 DEFAULT_INPUT_PATH = Path(
     "outputs/predictions/raw_baseline_calibration.jsonl"
 )

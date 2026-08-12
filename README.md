@@ -15,14 +15,14 @@
 
 ## Overview
 
-This project investigates **reliable selective question answering** for large language models. Instead of forcing a model to answer every question, the framework determines whether a response should be **accepted, verified, or abstained from** based on confidence calibration and evidence verification.
+This project investigates **reliable selective question answering** for pretrained transformer-based QA systems. Instead of forcing a QA model to answer every question, the framework evaluates whether a prediction should be **accepted, verified, or abstained from** based on confidence calibration and evidence verification.
 
 The project provides a modular research framework for evaluating decision policies, calibration methods, and verification strategies, with an emphasis on improving reliability while maintaining strong predictive performance.
 
 
 ## Motivation
 
-Large language models often generate answers even when they are uncertain, which can lead to unreliable or misleading responses. In many real-world applications, answering incorrectly may be more harmful than not answering at all.
+Question-answering models can produce incorrect answers even when their prediction scores appear confident. In many real-world applications, answering incorrectly may be more harmful than abstaining when reliability is insufficient.
 
 This project explores a reliability-first approach in which the system decides whether to answer directly, verify the generated response, or abstain when confidence is insufficient. By combining confidence calibration, evidence verification, and decision policies, the framework aims to improve the trustworthiness of question answering systems.
 
@@ -99,10 +99,10 @@ The project currently uses Python 3.12 and includes dependencies for PyTorch, Hu
   <img src="assets/figures/pipeline.svg" alt="Project pipeline" width="100%">
 </p>
 
-The research framework follows a modular pipeline designed to improve the reliability of large language model predictions.
+The research framework follows a modular pipeline for studying the reliability of selective question-answering predictions.
 
 1. **Data Preparation** – Load and preprocess datasets for training and evaluation.
-2. **Baseline Prediction** – Generate initial answers using baseline language models.
+2. **Baseline Prediction** – Generate extractive answers using the pretrained QA baseline.
 3. **Confidence Estimation** – Estimate the confidence of each prediction.
 4. **Confidence Calibration** – Apply calibration methods to improve confidence reliability.
 5. **Evidence Verification** – Verify generated answers using evidence-based validation modules.
@@ -129,61 +129,84 @@ The decision engine combines calibrated confidence and evidence verification to 
 
 ## Experimental Results
 
-### Risk–Coverage Analysis
+### Final Held-Out Evaluation
 
-The selective prediction performance was evaluated on **5,000 test examples** using the Area Under the Risk–Coverage Curve (AURC), where lower values indicate better selective prediction performance.
+The final evaluation uses **3,000 held-out SQuAD v2 test examples**. Confidence calibration is fitted only on the calibration split and then frozen before test evaluation. The same deterministic ordering is used for nested subsets of **200, 500, 1,000, 2,000, and 3,000 examples** with seed 17.
 
-| Method | AURC | Full Accuracy |
-|--------|-----:|--------------:|
-| Confidence only | **0.289** | 0.423 |
-| Confidence + Question-aware semantic V2 | 0.337 | 0.423 |
-| Question-aware semantic V2 | 0.391 | 0.423 |
-| Old semantic verifier | 0.395 | 0.423 |
+Selective prediction quality is measured primarily with the **Area Under the Risk-Coverage Curve (AURC)**, where lower values are better.
 
-The confidence-only baseline achieved the lowest AURC in this experiment. While the proposed semantic verification methods provide additional reasoning signals, they did not improve selective prediction performance on this benchmark.
+| Method | AURC | Normalized AURC | Delta AURC vs. Confidence | 95% Paired Bootstrap CI |
+|---|---:|---:|---:|---:|
+| **Confidence only** | **0.292378** | **0.218555** | — | — |
+| Confidence + self-verifier | 0.309103 | 0.264529 | +0.016725 | [0.008614, 0.024690] |
+| Confidence + question-aware semantic V2 | 0.339439 | 0.347915 | +0.047061 | [0.036347, 0.057295] |
+| Question-aware semantic V2 | 0.394397 | 0.498982 | +0.102019 | [0.086097, 0.118102] |
+| Self-verifier only | 0.433766 | 0.607200 | +0.141389 | [0.124188, 0.158985] |
 
-![Risk Coverage](assets/figures/risk_coverage.png)
+The confidence-only baseline achieved the lowest AURC at every evaluated sample size. Adding either question-aware semantic verification or self-verification did not improve overall selective ranking over the calibrated confidence baseline.
 
----
+The uncertainty analysis uses **5,000 paired bootstrap resamples** of the same held-out predictions. Positive Delta AURC means the compared method performs worse than confidence-only. All four paired confidence intervals remain above zero, supporting the stability of the confidence-only advantage on this test set.
+
+Some individual coverage points show small local reversals, but these do not change the overall AURC ranking. The main result is therefore a negative but informative finding: **additional verification signals do not necessarily improve selective QA ranking when the confidence baseline is already strong and calibrated.**
+
+![AURC by sample size](outputs/evaluation/final_sample_size_comparison/aurc_by_sample_size.png)
+
+![Normalized AURC by sample size](outputs/evaluation/final_sample_size_comparison/normalized_aurc_by_sample_size.png)
 
 ### Confidence Calibration
 
-Temperature scaling reduced model overconfidence and produced confidence estimates that are visually closer to the ideal calibration line than the raw confidence scores.
+Temperature scaling is fitted on the calibration split only and is never refitted using held-out test labels.
 
-![Calibration Curve](assets/figures/calibration_curve.png)
+The learned temperature is **4.754804**. On the calibration split, negative log-likelihood decreased from **1.011796** before scaling to **0.422054** after scaling. The fitted temperature is then frozen and applied to test predictions.
 
-The calibration plot compares raw confidence estimates with temperature-scaled confidence. After calibration, confidence estimates move closer to the ideal calibration line, indicating improved confidence reliability.
+### Interpretation
 
----
+The results do not show that semantic or self-verification is useless in general. They show a narrower result for this experimental setting: with a pretrained extractive QA model on SQuAD v2, the evaluated verification signals did not outperform calibrated confidence for global selective ranking.
 
-### Ablation Study
-
-The ablation study compares different confidence estimation strategies using the same evaluation protocol.
-
-![Ablation Results](assets/figures/ablation_results.png)
-
-Among the evaluated methods, the confidence-only baseline achieved the lowest AURC. The current semantic verifier variants did not outperform the baseline, suggesting that further improvements to semantic verification are required.
+This distinction is important because the verification signals may still provide useful diagnostic information or local improvements at particular coverage levels.
 
 ## Reproducibility
 
-Experiments are designed to be reproducible through versioned configuration files, fixed random seeds, automated scripts, and structured output directories.
+The final experiments are designed to be reproducible through fixed dataset splits, deterministic seeds, frozen calibration parameters, automated scripts, and versioned result artifacts.
 
-To reproduce the main experimental pipeline:
+The reference experimental environment used for the final results is:
+
+- Python **3.12.13**
+- Exact installed package versions: `requirements-lock.txt`
+- Supported dependency ranges: `requirements.txt`
+- Final evaluation ordering seed: **17**
+- Bootstrap seed: **17**
+- Paired bootstrap resamples: **5,000**
+
+The SQuAD v2 validation data is split into separate **calibration** and **held-out test** partitions. Temperature scaling is fitted on the calibration split only and the learned temperature is frozen before test evaluation. Test labels are not used to tune calibration parameters or ranking rules.
+
+To prepare the dataset:
 
 ```bash
-bash scripts/setup.sh
 bash scripts/download_dataset.sh
-bash scripts/run_all_experiments.sh
 ```
 
-Alternatively, the complete results workflow can be executed with:
+To run the final experiment pipeline:
 
 ```bash
-bash scripts/reproduce_results.sh
+DEVICE=cpu LIMIT=3000 bash scripts/run_all_experiments.sh
 ```
 
-Experiment configurations are stored in the `configs/` directory, while generated logs, predictions, tables, figures, and evaluation results are saved under `outputs/`.
+`DEVICE` may be changed to `mps` or `cuda` when supported by the local PyTorch installation.
 
+To execute the complete reproducibility workflow, including dataset preparation, experiments, bootstrap uncertainty analysis, linting, and tests:
+
+```bash
+DEVICE=cpu LIMIT=3000 bash scripts/reproduce_results.sh
+```
+
+The final lightweight evaluation artifacts are stored under:
+
+```text
+outputs/evaluation/final_sample_size_comparison/
+```
+
+Large intermediate predictions and reproducible nested `subset.jsonl` files are intentionally excluded from version control.
 
 ## Citation
 
@@ -191,14 +214,13 @@ If you use this repository in your research or build upon this work, please cite
 
 ```bibtex
 @misc{mustafayev2026knowing,
-  author       = {Shahzada Mustafayev},
-  title        = {Knowing When Not to Answer},
-  year         = {2026},
-  publisher    = {GitHub},
-  howpublished = {\url{https://github.com/mstfyvshzde/Knowing-When-Not-to-Answer}}
+  author    = {Shahzada Mustafayev},
+  title     = {Knowing When Not to Answer},
+  year      = {2026},
+  publisher = {GitHub},
+  url       = {https://github.com/mstfyvshzde/Knowing-When-Not-to-Answer}
 }
 ```
-
 
 ## License
 

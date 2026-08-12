@@ -7,9 +7,9 @@ protective abstentions, unnecessary abstentions, and unresolved VERIFY cases.
 """
 
 
-import argparse 
+import argparse
 import json
-from collections import Counter 
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ from src.evaluation.analyze_evidence_errors import (
     calculate_answer_metrics,
     get_gold_answers,
     get_predicted_answer,
-    parse_boolean
+    parse_boolean,
 )
 from src.utils.io import load_jsonl, save_jsonl
 

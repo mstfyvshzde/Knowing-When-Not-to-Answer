@@ -3,7 +3,7 @@ To check whether a predicted answer is semantically supported by the available e
 """
 
 
-import argparse 
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -11,15 +11,9 @@ import torch
 
 # AutoTokenizer -> converts text into tokens/numbers that the transformer model can understand.
 # AutoModelForSequenceClassification -> loads a transformer model that classifies text into labels/classes.
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer
-)
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from src.utils.io import (
-    load_jsonl,
-    save_jsonl
-)
+from src.utils.io import load_jsonl, save_jsonl
 
 DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_evidence.jsonl")
 
