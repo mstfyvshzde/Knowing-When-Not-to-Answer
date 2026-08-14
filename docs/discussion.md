@@ -6,11 +6,11 @@ The final held-out evaluation shows that calibrated confidence provides the stro
 
 On the 3,000-example held-out test set:
 
-- **Confidence only**: AURC `0.292378`
-- **Confidence + self-verifier**: AURC `0.309103`
-- **Confidence + question-aware semantic V2**: AURC `0.339439`
+- **Confidence only**: AURC `0.292379`
+- **Confidence + self-verifier**: AURC `0.309120`
+- **Confidence + question-aware semantic V2**: AURC `0.339417`
 - **Question-aware semantic V2**: AURC `0.394397`
-- **Self-verifier only**: AURC `0.433766`
+- **Self-verifier only**: AURC `0.433892`
 
 Because lower AURC is better, the confidence-only baseline ranks best overall.
 
@@ -22,10 +22,10 @@ Paired bootstrap analysis with 5,000 resamples supports the stability of the obs
 
 Relative to confidence only:
 
-- **Confidence + self-verifier**: Delta AURC `+0.016725`, 95% CI `[0.008614, 0.024690]`
-- **Confidence + question-aware semantic V2**: Delta AURC `+0.047061`, 95% CI `[0.036347, 0.057295]`
+- **Confidence + self-verifier**: Delta AURC `+0.016741`, 95% CI `[0.008561, 0.024773]`
+- **Confidence + question-aware semantic V2**: Delta AURC `+0.047038`, 95% CI `[0.036347, 0.057295]`
 - **Question-aware semantic V2**: Delta AURC `+0.102019`, 95% CI `[0.086097, 0.118102]`
-- **Self-verifier only**: Delta AURC `+0.141389`, 95% CI `[0.124188, 0.158985]`
+- **Self-verifier only**: Delta AURC `+0.141513`, 95% CI `[0.124280, 0.159087]`
 
 All observed Delta AURC confidence intervals remain above zero. Because lower AURC is better, this supports the conclusion that the confidence-only ranking advantage is stable under paired resampling of this test set.
 

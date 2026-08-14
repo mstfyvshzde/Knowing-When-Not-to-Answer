@@ -26,7 +26,7 @@ The design includes separate calibration and held-out test partitions, fixed sco
 
 ## Observed Outcome
 
-In the final 3,000-example held-out evaluation, confidence only achieves the lowest global AURC among the five evaluated methods. The same ordering favors confidence only at every nested sample size.
+In the final 3,000-example held-out evaluation, confidence only achieves the lowest global AURC among the five evaluated methods. At N=200, confidence + self-verifier is slightly better; confidence only is best at N=500, 1000, 2000, and 3000.
 
 The finding therefore does not support the hypothesis that adding the evaluated verification signals improves global selective ranking in this experimental setting.
 

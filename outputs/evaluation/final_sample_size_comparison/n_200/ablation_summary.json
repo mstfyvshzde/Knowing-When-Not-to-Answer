@@ -306,8 +306,8 @@
       "available_records": 200,
       "total_records": 200,
       "full_accuracy": 0.465,
-      "aurc": 0.34992697376459597,
-      "normalized_aurc": 0.47826310865257676,
+      "aurc": 0.3498127495910466,
+      "normalized_aurc": 0.4779411008136355,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -405,13 +405,13 @@
           "answered": 160,
           "total": 200,
           "actual_coverage": 0.8,
-          "selective_accuracy": 0.50625,
-          "risk": 0.49375,
-          "wrong_answered": 79,
-          "correct_answered": 81,
+          "selective_accuracy": 0.5125,
+          "risk": 0.4875,
+          "wrong_answered": 78,
+          "correct_answered": 82,
           "abstained": 40,
-          "correct_abstained": 12,
-          "incorrect_abstained": 28
+          "correct_abstained": 11,
+          "incorrect_abstained": 29
         },
         {
           "requested_coverage": 0.9,
@@ -588,8 +588,8 @@
       "available_records": 200,
       "total_records": 200,
       "full_accuracy": 0.465,
-      "aurc": 0.28468466073836235,
-      "normalized_aurc": 0.2943393771665727,
+      "aurc": 0.2845482258405725,
+      "normalized_aurc": 0.29395475537218085,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -674,13 +674,13 @@
           "answered": 140,
           "total": 200,
           "actual_coverage": 0.7,
-          "selective_accuracy": 0.6285714285714286,
-          "risk": 0.37142857142857144,
-          "wrong_answered": 52,
-          "correct_answered": 88,
+          "selective_accuracy": 0.6357142857142857,
+          "risk": 0.36428571428571427,
+          "wrong_answered": 51,
+          "correct_answered": 89,
           "abstained": 60,
-          "correct_abstained": 5,
-          "incorrect_abstained": 55
+          "correct_abstained": 4,
+          "incorrect_abstained": 56
         },
         {
           "requested_coverage": 0.8,

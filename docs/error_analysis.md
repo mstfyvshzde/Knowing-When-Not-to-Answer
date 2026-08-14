@@ -14,7 +14,7 @@ Out of 3,000 held-out examples:
 
 - correct predictions: *1,270*
 - incorrect predictions: *1,730*
-- full exact-match accuracy: *0.423333*
+- full exact-match accuracy: *0.422333*
 
 The verifiers do not change the underlying QA predictions. Their role in this study is to provide additional ranking signals for selective answering.
 
@@ -79,7 +79,7 @@ The self-verifier produced:
 | Label | Count | Correct | Incorrect | Accuracy |
 |---|---:|---:|---:|---:|
 | `SUPPORTED` | 886 | 542 | 344 | 0.6117 |
-| `UNDURTAIN` | 1,791 | 712 | 1,079 | 0.3975 |
+| `UNCERTAIN` | 1,791 | 712 | 1,079 | 0.3975 |
 | `REJECTED` | 323 | 16 | 307 | 0.0495 |
 
 This verifier is also diagnostically informative: rejected answers are almost always incorrect under the exact-match definition, while supported answers have substantially higher accuracy.

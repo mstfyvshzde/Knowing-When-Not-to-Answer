@@ -165,6 +165,55 @@ python experiments/bootstrap_aurc_uncertainty.py \
     --seed 17 \
     --order-seed 17
 
+
+# 9. Final publication-strength analyses
+if [[ "$LIMIT" == "3000" ]]; then
+    echo
+    echo "Running native SQuAD2 no-answer baseline..."
+    python -m src.baselines.native_no_answer_baseline \
+        --split test \
+        --limit "$LIMIT" \
+        --device "$DEVICE"
+
+    python -m src.evaluation.evaluate_native_no_answer_baseline
+
+    echo
+    echo "Running verifier signals on calibration split for fusion tuning..."
+    run_if_missing \
+        "$PRED_DIR/calibration_with_question_aware_semantic_evidence_v2.jsonl" \
+        python -m src.verification.question_answer_nli_verifier_v2 \
+            --input "$PRED_DIR/raw_baseline_calibrated_calibration.jsonl" \
+            --output "$PRED_DIR/calibration_with_question_aware_semantic_evidence_v2.jsonl" \
+            --batch-size 4
+
+    run_if_missing \
+        "$PRED_DIR/calibration_with_question_aware_v2_and_self_verification.jsonl" \
+        python -m src.verification.self_verifier \
+            --input "$PRED_DIR/calibration_with_question_aware_semantic_evidence_v2.jsonl" \
+            --output "$PRED_DIR/calibration_with_question_aware_v2_and_self_verification.jsonl" \
+            --batch-size 4
+
+    echo
+    echo "Tuning fusion weights on calibration split only..."
+    PYTHONPATH=. python experiments/tune_fusion_weights.py
+
+    echo
+    echo "Evaluating held-out calibration quality..."
+    python -m src.calibration.calibration_metrics \
+        --input "$PRED_DIR/raw_baseline_with_confidence_test.jsonl" \
+        --output "$TABLE_DIR/test_calibration_before.json" \
+        --bins 10
+
+    python -m src.calibration.calibration_metrics \
+        --input "$PRED_DIR/raw_baseline_calibrated_test.jsonl" \
+        --output "$TABLE_DIR/test_calibration_after.json" \
+        --bins 10
+
+    echo
+    echo "Running rank-flip analysis..."
+    PYTHONPATH=. python experiments/analyze_rank_flips.py
+fi
+
 echo
 echo "========================================"
 echo "FINAL EXPERIMENT PIPELINE COMPLETE"

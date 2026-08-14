@@ -353,7 +353,7 @@ def build_semantic_inputs(
     return premises, hypotheses
 
 
-# uns the complete semantic-verification pipeline on all predictions and saves the results.
+# Runs the complete semantic-verification pipeline on all predictions and saves the results.
 def run_semantic_verification(
     input_path: str | Path,
     output_path: str | Path,

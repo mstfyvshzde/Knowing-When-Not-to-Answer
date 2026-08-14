@@ -28,7 +28,7 @@ The final error analysis demonstrates that these failure modes occur in the eval
 
 ## Interpretation of Verification
 
-Verifier labels such as `ENTAILMENT`, `SUPPORTEDa, or `REJECTED` are diagnostic model outputs. They are not guarantees of factual correctness or safety.
+Verifier labels such as `ENTAILMENT`, `SUPPORTED`, `UNCERTAIN`, or `REJECTED` are diagnostic model outputs. They are not guarantees of factual correctness or safety.
 
 For example, the held-out analysis contains incorrect QA predictions labeled as semantically supported, as well as correct QA predictions receiving low semantic-support scores.
 

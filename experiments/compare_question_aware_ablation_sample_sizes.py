@@ -222,6 +222,7 @@ def save_rows_csv(
             output_file,
             fieldnames=fieldnames,
             extrasaction="ignore",
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)

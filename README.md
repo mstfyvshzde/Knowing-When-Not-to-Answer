@@ -125,7 +125,7 @@ The framework is organised into modular components for data processing, predicti
   <img src="assets/figures/decision_engine.svg" alt="Selective decision engine" width="100%">
 </p>
 
-The decision engine combines calibrated confidence and evidence verification to determine whether the system should answer directly, verify the response, or abstain when reliability is insufficient.
+The decision engine is an earlier prototype component for exploring ANSWER / VERIFY / ABSTAIN policies. It is not part of the final held-out evaluation reported in this repository; the final experiments compare ranking signals directly using risk-coverage metrics.
 
 ## Experimental Results
 
@@ -137,13 +137,13 @@ Selective prediction quality is measured primarily with the **Area Under the Ris
 
 | Method | AURC | Normalized AURC | Delta AURC vs. Confidence | 95% Paired Bootstrap CI |
 |---|---:|---:|---:|---:|
-| **Confidence only** | **0.292378** | **0.218555** | — | — |
-| Confidence + self-verifier | 0.309103 | 0.264529 | +0.016725 | [0.008614, 0.024690] |
-| Confidence + question-aware semantic V2 | 0.339439 | 0.347915 | +0.047061 | [0.036347, 0.057295] |
+| **Confidence only** | **0.292379** | **0.218555** | — | — |
+| Confidence + self-verifier | 0.309120 | 0.262110 | +0.016741 | [0.008561, 0.024773] |
+| Confidence + question-aware semantic V2 | 0.339417 | 0.347915 | +0.047038 | [0.036347, 0.057295] |
 | Question-aware semantic V2 | 0.394397 | 0.498982 | +0.102019 | [0.086097, 0.118102] |
-| Self-verifier only | 0.433766 | 0.607200 | +0.141389 | [0.124188, 0.158985] |
+| Self-verifier only | 0.433892 | 0.604947 | +0.141513 | [0.124280, 0.159087] |
 
-The confidence-only baseline achieved the lowest AURC at every evaluated sample size. Adding either question-aware semantic verification or self-verification did not improve overall selective ranking over the calibrated confidence baseline.
+Confidence only achieved the lowest AURC at N=500, 1000, 2000, and 3000; at N=200, confidence + self-verifier was slightly better (0.284548 vs 0.292532). Adding either question-aware semantic verification or self-verification did not improve overall selective ranking over the calibrated confidence baseline.
 
 The uncertainty analysis uses **5,000 paired bootstrap resamples** of the same held-out predictions. Positive Delta AURC means the compared method performs worse than confidence-only. All four paired confidence intervals remain above zero, supporting the stability of the confidence-only advantage on this test set.
 
@@ -157,7 +157,7 @@ Some individual coverage points show small local reversals, but these do not cha
 
 Temperature scaling is fitted on the calibration split only and is never refitted using held-out test labels.
 
-The learned temperature is **4.754804**. On the calibration split, negative log-likelihood decreased from **1.011796** before scaling to **0.422054** after scaling. The fitted temperature is then frozen and applied to test predictions.
+The learned temperature is **4.604539**. On the calibration split, negative log-likelihood decreased from **0.966913** before scaling to **0.412469** after scaling. The fitted temperature is then frozen and applied to test predictions.
 
 ### Interpretation
 

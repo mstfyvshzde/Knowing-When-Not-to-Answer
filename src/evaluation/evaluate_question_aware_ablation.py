@@ -445,9 +445,7 @@ def infer_correctness(
 
     normalized_references = [normalize_answer(reference) for reference in references]
 
-    # Empty list represents an unanswerable example.
-    if not normalized_references:
-        return normalized_prediction == ""
+    # For unanswerable examples, respect the explicit system decision.\n    # A punctuation-only forced answer such as "." is still an ANSWER, not an abstention.\n    if not normalized_references:\n        decision = clean_text(record.get("decision", "" )).upper()\n        if decision:\n            return decision == "ABSTAIN"\n        return clean_text(prediction_value) == ""
 
     return any(
         normalized_prediction == reference for reference in normalized_references
@@ -788,7 +786,8 @@ def save_matched_coverage_csv(
     ) as output_file:
         writer = csv.DictWriter(
             output_file,
-            fieldnames=field_names
+            fieldnames=field_names,
+            lineterminator="\n",
         )
 
         writer.writeheader()
@@ -828,7 +827,8 @@ def save_summary_csv(
                 "full_accuracy",
                 "aurc",
                 "normalized_aurc"
-            ]
+            ],
+            lineterminator="\n",
         )
 
         writer.writeheader()
@@ -872,7 +872,8 @@ def save_curve_csv(
                 "selective_accuracy",
                 "risk",
                 "wrong_answered"
-            ]
+            ],
+            lineterminator="\n",
         )
 
         writer.writeheader()

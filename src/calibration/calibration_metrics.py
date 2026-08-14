@@ -22,7 +22,7 @@ def normalize_answer(text: str) -> str:
         character for character in text if character not in string.punctuation
     )
 
-    text = re.sub(r"\b(a | an| the |)\b", " ", text)
+    text = re.sub(r"\b(a|an|the)\b", " ", text)
 
     return " ".join(text.split())
 

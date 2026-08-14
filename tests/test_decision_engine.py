@@ -164,7 +164,7 @@ def test_combine_decisions_verify_unsupported_becomes_abstain() -> None:
     )
 
     assert final_decision == "ABSTAIN"
-    assert reason == "medim_confidence_and_unsupported_evidence"
+    assert reason == "medium_confidence_and_unsupported_evidence"
 
 
 # Checks that one prediction is processed and enriched correctly.

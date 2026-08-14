@@ -1,9 +1,9 @@
 {
   "input_path": "outputs/evaluation/final_sample_size_comparison/n_500/subset.jsonl",
   "total_records": 500,
-  "correct_predictions": 227,
-  "incorrect_predictions": 273,
-  "full_accuracy": 0.454,
+  "correct_predictions": 226,
+  "incorrect_predictions": 274,
+  "full_accuracy": 0.452,
   "detected_fields": {
     "confidence": "calibrated_confidence",
     "lexical": null,
@@ -23,9 +23,9 @@
       "score_field": "calibrated_confidence",
       "available_records": 500,
       "total_records": 500,
-      "full_accuracy": 0.454,
-      "aurc": 0.2765306865077305,
-      "normalized_aurc": 0.24720694607469434,
+      "full_accuracy": 0.452,
+      "aurc": 0.2765346865077305,
+      "normalized_aurc": 0.24250756033013743,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -37,8 +37,8 @@
           "wrong_answered": 7,
           "correct_answered": 43,
           "abstained": 450,
-          "correct_abstained": 184,
-          "incorrect_abstained": 266
+          "correct_abstained": 183,
+          "incorrect_abstained": 267
         },
         {
           "requested_coverage": 0.2,
@@ -50,8 +50,8 @@
           "wrong_answered": 17,
           "correct_answered": 83,
           "abstained": 400,
-          "correct_abstained": 144,
-          "incorrect_abstained": 256
+          "correct_abstained": 143,
+          "incorrect_abstained": 257
         },
         {
           "requested_coverage": 0.3,
@@ -63,8 +63,8 @@
           "wrong_answered": 21,
           "correct_answered": 129,
           "abstained": 350,
-          "correct_abstained": 98,
-          "incorrect_abstained": 252
+          "correct_abstained": 97,
+          "incorrect_abstained": 253
         },
         {
           "requested_coverage": 0.4,
@@ -76,8 +76,8 @@
           "wrong_answered": 31,
           "correct_answered": 169,
           "abstained": 300,
-          "correct_abstained": 58,
-          "incorrect_abstained": 242
+          "correct_abstained": 57,
+          "incorrect_abstained": 243
         },
         {
           "requested_coverage": 0.5,
@@ -89,8 +89,8 @@
           "wrong_answered": 53,
           "correct_answered": 197,
           "abstained": 250,
-          "correct_abstained": 30,
-          "incorrect_abstained": 220
+          "correct_abstained": 29,
+          "incorrect_abstained": 221
         },
         {
           "requested_coverage": 0.6,
@@ -102,8 +102,8 @@
           "wrong_answered": 86,
           "correct_answered": 214,
           "abstained": 200,
-          "correct_abstained": 13,
-          "incorrect_abstained": 187
+          "correct_abstained": 12,
+          "incorrect_abstained": 188
         },
         {
           "requested_coverage": 0.7,
@@ -115,8 +115,8 @@
           "wrong_answered": 128,
           "correct_answered": 222,
           "abstained": 150,
-          "correct_abstained": 5,
-          "incorrect_abstained": 145
+          "correct_abstained": 4,
+          "incorrect_abstained": 146
         },
         {
           "requested_coverage": 0.8,
@@ -128,8 +128,8 @@
           "wrong_answered": 174,
           "correct_answered": 226,
           "abstained": 100,
-          "correct_abstained": 1,
-          "incorrect_abstained": 99
+          "correct_abstained": 0,
+          "incorrect_abstained": 100
         },
         {
           "requested_coverage": 0.9,
@@ -141,18 +141,18 @@
           "wrong_answered": 224,
           "correct_answered": 226,
           "abstained": 50,
-          "correct_abstained": 1,
-          "incorrect_abstained": 49
+          "correct_abstained": 0,
+          "incorrect_abstained": 50
         },
         {
           "requested_coverage": 1.0,
           "answered": 500,
           "total": 500,
           "actual_coverage": 1.0,
-          "selective_accuracy": 0.454,
-          "risk": 0.546,
-          "wrong_answered": 273,
-          "correct_answered": 227,
+          "selective_accuracy": 0.452,
+          "risk": 0.548,
+          "wrong_answered": 274,
+          "correct_answered": 226,
           "abstained": 0,
           "correct_abstained": 0,
           "incorrect_abstained": 0
@@ -164,9 +164,9 @@
       "score_field": "qa_entailment_probability; invalid claims=0",
       "available_records": 500,
       "total_records": 500,
-      "full_accuracy": 0.454,
-      "aurc": 0.3722600843330929,
-      "normalized_aurc": 0.5146378635526224,
+      "full_accuracy": 0.452,
+      "aurc": 0.3728942461331488,
+      "normalized_aurc": 0.5113877239398807,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -178,8 +178,8 @@
           "wrong_answered": 10,
           "correct_answered": 40,
           "abstained": 450,
-          "correct_abstained": 187,
-          "incorrect_abstained": 263
+          "correct_abstained": 186,
+          "incorrect_abstained": 264
         },
         {
           "requested_coverage": 0.2,
@@ -191,8 +191,8 @@
           "wrong_answered": 25,
           "correct_answered": 75,
           "abstained": 400,
-          "correct_abstained": 152,
-          "incorrect_abstained": 248
+          "correct_abstained": 151,
+          "incorrect_abstained": 249
         },
         {
           "requested_coverage": 0.3,
@@ -204,8 +204,8 @@
           "wrong_answered": 40,
           "correct_answered": 110,
           "abstained": 350,
-          "correct_abstained": 117,
-          "incorrect_abstained": 233
+          "correct_abstained": 116,
+          "incorrect_abstained": 234
         },
         {
           "requested_coverage": 0.4,
@@ -217,8 +217,8 @@
           "wrong_answered": 64,
           "correct_answered": 136,
           "abstained": 300,
-          "correct_abstained": 91,
-          "incorrect_abstained": 209
+          "correct_abstained": 90,
+          "incorrect_abstained": 210
         },
         {
           "requested_coverage": 0.5,
@@ -230,8 +230,8 @@
           "wrong_answered": 89,
           "correct_answered": 161,
           "abstained": 250,
-          "correct_abstained": 66,
-          "incorrect_abstained": 184
+          "correct_abstained": 65,
+          "incorrect_abstained": 185
         },
         {
           "requested_coverage": 0.6,
@@ -243,8 +243,8 @@
           "wrong_answered": 125,
           "correct_answered": 175,
           "abstained": 200,
-          "correct_abstained": 52,
-          "incorrect_abstained": 148
+          "correct_abstained": 51,
+          "incorrect_abstained": 149
         },
         {
           "requested_coverage": 0.7,
@@ -256,18 +256,18 @@
           "wrong_answered": 163,
           "correct_answered": 187,
           "abstained": 150,
-          "correct_abstained": 40,
-          "incorrect_abstained": 110
+          "correct_abstained": 39,
+          "incorrect_abstained": 111
         },
         {
           "requested_coverage": 0.8,
           "answered": 400,
           "total": 500,
           "actual_coverage": 0.8,
-          "selective_accuracy": 0.495,
-          "risk": 0.505,
-          "wrong_answered": 202,
-          "correct_answered": 198,
+          "selective_accuracy": 0.4925,
+          "risk": 0.5075,
+          "wrong_answered": 203,
+          "correct_answered": 197,
           "abstained": 100,
           "correct_abstained": 29,
           "incorrect_abstained": 71
@@ -277,10 +277,10 @@
           "answered": 450,
           "total": 500,
           "actual_coverage": 0.9,
-          "selective_accuracy": 0.4577777777777778,
-          "risk": 0.5422222222222223,
-          "wrong_answered": 244,
-          "correct_answered": 206,
+          "selective_accuracy": 0.45555555555555555,
+          "risk": 0.5444444444444444,
+          "wrong_answered": 245,
+          "correct_answered": 205,
           "abstained": 50,
           "correct_abstained": 21,
           "incorrect_abstained": 29
@@ -290,10 +290,10 @@
           "answered": 500,
           "total": 500,
           "actual_coverage": 1.0,
-          "selective_accuracy": 0.454,
-          "risk": 0.546,
-          "wrong_answered": 273,
-          "correct_answered": 227,
+          "selective_accuracy": 0.452,
+          "risk": 0.548,
+          "wrong_answered": 274,
+          "correct_answered": 226,
           "abstained": 0,
           "correct_abstained": 0,
           "incorrect_abstained": 0
@@ -305,9 +305,9 @@
       "score_field": "sqrt(calibrated_confidence * qa_entailment_probability); invalid claims=0",
       "available_records": 500,
       "total_records": 500,
-      "full_accuracy": 0.454,
-      "aurc": 0.31475682256297527,
-      "normalized_aurc": 0.3539959875720575,
+      "full_accuracy": 0.452,
+      "aurc": 0.3148857654872683,
+      "normalized_aurc": 0.3495217935905829,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -319,8 +319,8 @@
           "wrong_answered": 7,
           "correct_answered": 43,
           "abstained": 450,
-          "correct_abstained": 184,
-          "incorrect_abstained": 266
+          "correct_abstained": 183,
+          "incorrect_abstained": 267
         },
         {
           "requested_coverage": 0.2,
@@ -332,8 +332,8 @@
           "wrong_answered": 15,
           "correct_answered": 85,
           "abstained": 400,
-          "correct_abstained": 142,
-          "incorrect_abstained": 258
+          "correct_abstained": 141,
+          "incorrect_abstained": 259
         },
         {
           "requested_coverage": 0.3,
@@ -345,21 +345,21 @@
           "wrong_answered": 22,
           "correct_answered": 128,
           "abstained": 350,
-          "correct_abstained": 99,
-          "incorrect_abstained": 251
+          "correct_abstained": 98,
+          "incorrect_abstained": 252
         },
         {
           "requested_coverage": 0.4,
           "answered": 200,
           "total": 500,
           "actual_coverage": 0.4,
-          "selective_accuracy": 0.785,
-          "risk": 0.215,
-          "wrong_answered": 43,
-          "correct_answered": 157,
+          "selective_accuracy": 0.79,
+          "risk": 0.21,
+          "wrong_answered": 42,
+          "correct_answered": 158,
           "abstained": 300,
-          "correct_abstained": 70,
-          "incorrect_abstained": 230
+          "correct_abstained": 68,
+          "incorrect_abstained": 232
         },
         {
           "requested_coverage": 0.5,
@@ -371,8 +371,8 @@
           "wrong_answered": 78,
           "correct_answered": 172,
           "abstained": 250,
-          "correct_abstained": 55,
-          "incorrect_abstained": 195
+          "correct_abstained": 54,
+          "incorrect_abstained": 196
         },
         {
           "requested_coverage": 0.6,
@@ -384,8 +384,8 @@
           "wrong_answered": 114,
           "correct_answered": 186,
           "abstained": 200,
-          "correct_abstained": 41,
-          "incorrect_abstained": 159
+          "correct_abstained": 40,
+          "incorrect_abstained": 160
         },
         {
           "requested_coverage": 0.7,
@@ -397,8 +397,8 @@
           "wrong_answered": 157,
           "correct_answered": 193,
           "abstained": 150,
-          "correct_abstained": 34,
-          "incorrect_abstained": 116
+          "correct_abstained": 33,
+          "incorrect_abstained": 117
         },
         {
           "requested_coverage": 0.8,
@@ -410,18 +410,18 @@
           "wrong_answered": 198,
           "correct_answered": 202,
           "abstained": 100,
-          "correct_abstained": 25,
-          "incorrect_abstained": 75
+          "correct_abstained": 24,
+          "incorrect_abstained": 76
         },
         {
           "requested_coverage": 0.9,
           "answered": 450,
           "total": 500,
           "actual_coverage": 0.9,
-          "selective_accuracy": 0.4577777777777778,
-          "risk": 0.5422222222222223,
-          "wrong_answered": 244,
-          "correct_answered": 206,
+          "selective_accuracy": 0.45555555555555555,
+          "risk": 0.5444444444444444,
+          "wrong_answered": 245,
+          "correct_answered": 205,
           "abstained": 50,
           "correct_abstained": 21,
           "incorrect_abstained": 29
@@ -431,10 +431,10 @@
           "answered": 500,
           "total": 500,
           "actual_coverage": 1.0,
-          "selective_accuracy": 0.454,
-          "risk": 0.546,
-          "wrong_answered": 273,
-          "correct_answered": 227,
+          "selective_accuracy": 0.452,
+          "risk": 0.548,
+          "wrong_answered": 274,
+          "correct_answered": 226,
           "abstained": 0,
           "correct_abstained": 0,
           "incorrect_abstained": 0
@@ -446,9 +446,9 @@
       "score_field": "normalized(self_verification_score)",
       "available_records": 500,
       "total_records": 500,
-      "full_accuracy": 0.454,
-      "aurc": 0.410082199619718,
-      "normalized_aurc": 0.6202982272635734,
+      "full_accuracy": 0.452,
+      "aurc": 0.41024878904553547,
+      "normalized_aurc": 0.615621239004641,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -460,8 +460,8 @@
           "wrong_answered": 16,
           "correct_answered": 34,
           "abstained": 450,
-          "correct_abstained": 193,
-          "incorrect_abstained": 257
+          "correct_abstained": 192,
+          "incorrect_abstained": 258
         },
         {
           "requested_coverage": 0.2,
@@ -473,8 +473,8 @@
           "wrong_answered": 30,
           "correct_answered": 70,
           "abstained": 400,
-          "correct_abstained": 157,
-          "incorrect_abstained": 243
+          "correct_abstained": 156,
+          "incorrect_abstained": 244
         },
         {
           "requested_coverage": 0.3,
@@ -486,8 +486,8 @@
           "wrong_answered": 53,
           "correct_answered": 97,
           "abstained": 350,
-          "correct_abstained": 130,
-          "incorrect_abstained": 220
+          "correct_abstained": 129,
+          "incorrect_abstained": 221
         },
         {
           "requested_coverage": 0.4,
@@ -499,8 +499,8 @@
           "wrong_answered": 75,
           "correct_answered": 125,
           "abstained": 300,
-          "correct_abstained": 102,
-          "incorrect_abstained": 198
+          "correct_abstained": 101,
+          "incorrect_abstained": 199
         },
         {
           "requested_coverage": 0.5,
@@ -512,8 +512,8 @@
           "wrong_answered": 101,
           "correct_answered": 149,
           "abstained": 250,
-          "correct_abstained": 78,
-          "incorrect_abstained": 172
+          "correct_abstained": 77,
+          "incorrect_abstained": 173
         },
         {
           "requested_coverage": 0.6,
@@ -525,8 +525,8 @@
           "wrong_answered": 126,
           "correct_answered": 174,
           "abstained": 200,
-          "correct_abstained": 53,
-          "incorrect_abstained": 147
+          "correct_abstained": 52,
+          "incorrect_abstained": 148
         },
         {
           "requested_coverage": 0.7,
@@ -538,8 +538,8 @@
           "wrong_answered": 159,
           "correct_answered": 191,
           "abstained": 150,
-          "correct_abstained": 36,
-          "incorrect_abstained": 114
+          "correct_abstained": 35,
+          "incorrect_abstained": 115
         },
         {
           "requested_coverage": 0.8,
@@ -551,8 +551,8 @@
           "wrong_answered": 191,
           "correct_answered": 209,
           "abstained": 100,
-          "correct_abstained": 18,
-          "incorrect_abstained": 82
+          "correct_abstained": 17,
+          "incorrect_abstained": 83
         },
         {
           "requested_coverage": 0.9,
@@ -564,18 +564,18 @@
           "wrong_answered": 227,
           "correct_answered": 223,
           "abstained": 50,
-          "correct_abstained": 4,
-          "incorrect_abstained": 46
+          "correct_abstained": 3,
+          "incorrect_abstained": 47
         },
         {
           "requested_coverage": 1.0,
           "answered": 500,
           "total": 500,
           "actual_coverage": 1.0,
-          "selective_accuracy": 0.454,
-          "risk": 0.546,
-          "wrong_answered": 273,
-          "correct_answered": 227,
+          "selective_accuracy": 0.452,
+          "risk": 0.548,
+          "wrong_answered": 274,
+          "correct_answered": 226,
           "abstained": 0,
           "correct_abstained": 0,
           "incorrect_abstained": 0
@@ -587,9 +587,9 @@
       "score_field": "sqrt(calibrated_confidence * normalized(self_verification_score))",
       "available_records": 500,
       "total_records": 500,
-      "full_accuracy": 0.454,
-      "aurc": 0.27844466083816816,
-      "normalized_aurc": 0.25255385019031323,
+      "full_accuracy": 0.452,
+      "aurc": 0.27819077589062446,
+      "normalized_aurc": 0.24712868547803013,
       "matched_coverage": [
         {
           "requested_coverage": 0.1,
@@ -601,8 +601,8 @@
           "wrong_answered": 3,
           "correct_answered": 47,
           "abstained": 450,
-          "correct_abstained": 180,
-          "incorrect_abstained": 270
+          "correct_abstained": 179,
+          "incorrect_abstained": 271
         },
         {
           "requested_coverage": 0.2,
@@ -614,8 +614,8 @@
           "wrong_answered": 15,
           "correct_answered": 85,
           "abstained": 400,
-          "correct_abstained": 142,
-          "incorrect_abstained": 258
+          "correct_abstained": 141,
+          "incorrect_abstained": 259
         },
         {
           "requested_coverage": 0.3,
@@ -627,8 +627,8 @@
           "wrong_answered": 25,
           "correct_answered": 125,
           "abstained": 350,
-          "correct_abstained": 102,
-          "incorrect_abstained": 248
+          "correct_abstained": 101,
+          "incorrect_abstained": 249
         },
         {
           "requested_coverage": 0.4,
@@ -640,8 +640,8 @@
           "wrong_answered": 39,
           "correct_answered": 161,
           "abstained": 300,
-          "correct_abstained": 66,
-          "incorrect_abstained": 234
+          "correct_abstained": 65,
+          "incorrect_abstained": 235
         },
         {
           "requested_coverage": 0.5,
@@ -653,8 +653,8 @@
           "wrong_answered": 56,
           "correct_answered": 194,
           "abstained": 250,
-          "correct_abstained": 33,
-          "incorrect_abstained": 217
+          "correct_abstained": 32,
+          "incorrect_abstained": 218
         },
         {
           "requested_coverage": 0.6,
@@ -666,8 +666,8 @@
           "wrong_answered": 90,
           "correct_answered": 210,
           "abstained": 200,
-          "correct_abstained": 17,
-          "incorrect_abstained": 183
+          "correct_abstained": 16,
+          "incorrect_abstained": 184
         },
         {
           "requested_coverage": 0.7,
@@ -679,8 +679,8 @@
           "wrong_answered": 131,
           "correct_answered": 219,
           "abstained": 150,
-          "correct_abstained": 8,
-          "incorrect_abstained": 142
+          "correct_abstained": 7,
+          "incorrect_abstained": 143
         },
         {
           "requested_coverage": 0.8,
@@ -692,8 +692,8 @@
           "wrong_answered": 177,
           "correct_answered": 223,
           "abstained": 100,
-          "correct_abstained": 4,
-          "incorrect_abstained": 96
+          "correct_abstained": 3,
+          "incorrect_abstained": 97
         },
         {
           "requested_coverage": 0.9,
@@ -705,18 +705,18 @@
           "wrong_answered": 224,
           "correct_answered": 226,
           "abstained": 50,
-          "correct_abstained": 1,
-          "incorrect_abstained": 49
+          "correct_abstained": 0,
+          "incorrect_abstained": 50
         },
         {
           "requested_coverage": 1.0,
           "answered": 500,
           "total": 500,
           "actual_coverage": 1.0,
-          "selective_accuracy": 0.454,
-          "risk": 0.546,
-          "wrong_answered": 273,
-          "correct_answered": 227,
+          "selective_accuracy": 0.452,
+          "risk": 0.548,
+          "wrong_answered": 274,
+          "correct_answered": 226,
           "abstained": 0,
           "correct_abstained": 0,
           "incorrect_abstained": 0

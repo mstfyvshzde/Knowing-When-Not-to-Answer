@@ -275,6 +275,7 @@ def run_bootstrap(
         writer = csv.DictWriter(
             file,
             fieldnames=list(rows[0].keys()),
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)

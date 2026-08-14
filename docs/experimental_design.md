@@ -132,7 +132,7 @@ The working hypothesis was that adding verification signals could improve the ri
 
 The observed final result does not support that hypothesis in this experimental setting.
 
-Confidence only achieves the lowest AURC at every tested sample size from 200 through 3,000 examples.
+Confidence only achieves the lowest AURC at N=500, 1,000, 2,000, and 3,000; at N=200, confidence + self-verifier is slightly better.
 
 This negative result is reported as an experimental finding rather than reframed as a successful combined-verification method.
 

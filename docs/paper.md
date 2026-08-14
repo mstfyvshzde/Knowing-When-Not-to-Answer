@@ -2,7 +2,7 @@
 
 ## Abstract
 
-Selective question answering allows a system to abstain on predictions likely to be wrong. This study tests whether semantic or self-verification signals improve selective ranking over a calibrated-confidence baseline in extractive QA. Experiments use SQuAD v2 with `deepset/roberta-base-squad2`. The original validation data is split into separate calibration and held-out test partitions; temperature scaling is fitted only on calibration data and frozen before test evaluation. Five ranking methods are compared on deterministic nested held-out subsets up to 3,000 examples. The primary metric is area under the risk-coverage curve (AURC), where lower is better. Confidence only achieves the best final AURC (`0.292378`) and the lowest AURC at every tested sample size. Adding self-verification increases AURC to `0.309103`, while adding question-aware semantic verification increases it to `0.339439`. Paired bootstrap analysis with 5,000 resamples supports the stability of the confidence-only advantage on this held-out set. The result is a negative but informative finding: in this setting, the evaluated verification signals do not improve global selective ranking over strong calibrated confidence.
+Selective question answering allows a system to abstain on predictions likely to be wrong. This study tests whether semantic or self-verification signals improve selective ranking over a calibrated-confidence baseline in extractive QA. Experiments use SQuAD v2 with `deepset/roberta-base-squad2`. The original validation data is split into separate calibration and held-out test partitions; temperature scaling is fitted only on calibration data and frozen before test evaluation. Five ranking methods are compared on deterministic nested held-out subsets up to 3,000 examples. The primary metric is area under the risk-coverage curve (AURC), where lower is better. Confidence only achieves the best final AURC (`0.292379`) and the lowest AURC at N=500, 1,000, 2,000, and 3,000, while confidence + self-verifier is slightly better at N=200. Adding self-verification increases AURC to `0.309120`, while adding question-aware semantic verification increases it to `0.339417`. Paired bootstrap analysis with 5,000 resamples supports the stability of the confidence-only advantage on this held-out set. The result is a negative but informative finding: in this setting, the evaluated verification signals do not improve global selective ranking over strong calibrated confidence.
 
 ## 1. Research Question
 
@@ -20,7 +20,7 @@ This study does not claim novelty for abstention, calibration, or selective QA t
 
 Experiments use SQuAD v2 (Rajpurkar et al., 2018). The original validation set is divided into calibration and held-out test partitions with a deterministic 50/50 stratified split using seed `17`.
 
-The extractive QA backbone is `deepset/roberta-base-squad2`. Confidence is derived from the answer-vs-null margin and calibrated with temperature scaling (Guo et al., 2017). The learned temperature is `4.754804205196784`; calibration negative log-likelihood changes from `1.011796` before scaling to `0.422054` after scaling. The fitted temperature is frozen before application to the held-out test set.
+The extractive QA backbone is `deepset/roberta-base-squad2`. Confidence is derived from the answer-vs-null margin and calibrated with temperature scaling (Guo et al., 2017). The learned temperature is `4.60453865752246`; calibration negative log-likelihood changes from `0.966913` before scaling to `0.412469` after scaling. The fitted temperature is frozen before application to the held-out test set.
 
 Question-aware semantic verification converts each question-answer pair into a declarative claim using `domenicrosati/QA2D-t5-base` and evaluates the claim against the context with `FacebookAI/roberta-large-mnli`. Structurally invalid claims receive semantic score `0`.
 
@@ -50,17 +50,17 @@ The primary metric is AURC. Lower AURC indicates better selective ranking. Norma
 
 ## 6. Results
 
-Final held-out exact-match accuracy is `0.4233`.
+Final held-out exact-match accuracy is `0.4223`.
 
 | Method | AURC | Normalized AURC |
 |---|---:|---:|
-| Confidence only | **0.292378** | **0.218555** |
-| Confidence + self-verifier | 0.309103 | 0.264529 |
-| Confidence + question-aware semantic V2 | 0.339439 | 0.347915 |
+| Confidence only | **0.292379** | **0.218555** |
+| Confidence + self-verifier | 0.309120 | 0.262110 |
+| Confidence + question-aware semantic V2 | 0.339417 | 0.347915 |
 | Question-aware semantic V2 | 0.394397 | 0.498982 |
-| Self-verifier only | 0.433766 | 0.607200 |
+| Self-verifier only | 0.433892 | 0.604947 |
 
-Confidence only has the lowest AURC at every nested sample size.
+Confidence only has the lowest AURC at N=500, 1,000, 2,000, and 3,000; confidence + self-verifier is slightly better at N=200.
 
 Small local reversals occur. At approximately 20% coverage on the 3,000-example evaluation, confidence + question-aware semantic V2 has risk around `0.1450`, compared with `0.1467` for confidence only. This does not reverse the global AURC ordering.
 
@@ -72,10 +72,10 @@ For each non-baseline method, `Delta AURC = method AURC - confidence-only AURC`.
 
 | Method | Delta AURC | 95% CI |
 |---|---:|---:|
-| Confidence + self-verifier | +0.016725 | [0.008614, 0.024690] |
-| Confidence + question-aware semantic V2 | +0.047061 | [0.036347, 0.057295] |
+| Confidence + self-verifier | +0.016741 | [0.008561, 0.024773] |
+| Confidence + question-aware semantic V2 | +0.047038 | [0.036347, 0.057295] |
 | Question-aware semantic V2 | +0.102019 | [0.086097, 0.118102] |
-| Self-verifier only | +0.141389 | [0.124188, 0.158985] |
+| Self-verifier only | +0.141513 | [0.124280, 0.159087] |
 
 All intervals remain above zero. Since lower AURC is better, this supports the stability of the confidence-only advantage on this held-out test set. It is not a universal significance claim beyond this experimental setting.
 

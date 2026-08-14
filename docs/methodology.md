@@ -59,12 +59,12 @@ Temperature scaling is fitted on the calibration split only.
 
 The learned temperature is:
 
-`4.754804205196784`
+`4.60453865752246`
 
 Calibration negative log-likelihood changed from:
 
-- before scaling: `1.011796`
-- after scaling: `0.422054`
+- before scaling: `0.966913`
+- after scaling: `0.412469`
 
 After fitting, the temperature is frozen and applied to held-out test predictions without refitting on test labels.
 

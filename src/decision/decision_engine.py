@@ -114,7 +114,7 @@ def combine_decisions(
         return ("VERIFY", "medium_confidence_and_weak_evidence")
 
     if threshold_decision == "VERIFY" and evidence_support == "UNSUPPORTED":
-        return ("ABSTAIN", "medim_confidence_and_unsupported_evidence")
+        return ("ABSTAIN", "medium_confidence_and_unsupported_evidence")
 
     return ("ABSTAIN", "unhandled_decision_combination")
 
@@ -236,7 +236,7 @@ def print_decision_summary(metrics: dict[str, Any]) -> None:
             print(f"{decision.upper()} accuracy: {accuracy:.4f}")
 
 
-# uns the complete final-decision pipeline: it loads predictions, validates them, processes each one into a final ANSWER, VERIFY, or ABSTAIN decision, saves the results, calculates metrics, prints a summary, and returns the final predictions.
+# Runs the complete final-decision pipeline: it loads predictions, validates them, processes each one into a final ANSWER, VERIFY, or ABSTAIN decision, saves the results, calculates metrics, prints a summary, and returns the final predictions.
 def run_decision_engine(
     input_path: str | Path,
     output_path: str | Path,
