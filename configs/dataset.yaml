@@ -1,64 +1,152 @@
 dataset:
   name: "squad_v2"
-  source: "huggingface"
-  version: null
-  cache_dir: "data/raw"
+  # Projede kullanılan benchmark'ın kısa adı.
+
+  source_provider: "huggingface"
+  # Dataset Hugging Face Datasets üzerinden yüklenir.
+
+  source_dataset: "rajpurkar/squad_v2"
+  # download_data.py tarafından kullanılan exact dataset identifier.
+
+  revision: null
+  # Belirli bir Hugging Face dataset revision'ı şu anda pinlenmemiştir.
+  # null değeri varsayılan mevcut revision'ın kullanıldığını belirtir.
+
+  raw_data_dir: "data/raw/squad_v2"
+  # İndirilen, proje-spesifik dönüşüm uygulanmamış dataset kopyası.
+
 
 task:
   type: "extractive_question_answering"
+  # Model cevabı verilen context içindeki bir text span'den çıkarır.
+
   context_grounded: true
+  # Tahmin edilen cevap sağlanan context'e dayanır.
+
   includes_unanswerable_questions: true
+  # SQuAD v2 hem answerable hem de unanswerable sorular içerir.
+
 
 splits:
   training_split: "train"
+  # Orijinal SQuAD v2 training split'i korunur.
+  # Final deneylerde QA backbone bu proje içinde yeniden train/fine-tune edilmez.
+
   evaluation_source_split: "validation"
+  # Gold label içeren official validation split,
+  # calibration ve held-out test oluşturmak için kullanılır.
 
   evaluation_strategy: "partition_official_validation"
+  # Official validation split iki disjoint subset'e bölünür.
+
   calibration_fraction: 0.50
+  # Her answerability sınıfının yaklaşık yarısı calibration'a ayrılır.
+
   held_out_test_fraction: 0.50
+  # Kalan örnekler final held-out değerlendirme için saklanır.
 
-  split_seed: 42
+  split_seed: 17
+  # Canonical dataset split seed'i.
+  # Aynı seed aynı calibration/test assignment'ını üretir.
+
   stratify_by_answerability: true
+  # Answerable ve unanswerable örnekler ayrı ayrı bölünerek
+  # iki subset'te benzer class distribution korunur.
 
-labels:
-  answerable: "ANSWERABLE"
-  unanswerable: "UNANSWERABLE"
 
-  supported: "SUPPORTED"
-  unsupported: "UNSUPPORTED"
-  uncertain: "UNCERTAIN"
+answerability:
+  field: "is_answerable"
+  # prepare_data.py tarafından her örneğe eklenen binary alan.
+
+  answerable_value: 1
+  # En az bir gold/reference answer varsa kullanılır.
+
+  unanswerable_value: 0
+  # Gold answer listesi boşsa kullanılır.
+
 
 preprocessing:
   preserve_original_text: true
-  normalize_whitespace: true
-  lowercase_text: false
-  remove_duplicates: true
-  remove_missing_examples: true
+  # Question, context ve gold answer text'i değiştirilmez.
 
-  maximum_context_length: 384
-  maximum_question_length: 64
-  document_stride: 128
+  add_answerability_column: true
+  # Her örneğe is_answerable alanı eklenir.
+
+  normalize_whitespace: false
+  # Dataset preparation aşaması text üzerinde whitespace normalization yapmaz.
+
+  lowercase_text: false
+  # Raw question/context text'i lowercase yapılmaz.
+
+  remove_duplicates: false
+  # Dataset preparation duplicate filtering uygulamaz.
+
+  remove_missing_examples: false
+  # Missing-example filtering uygulanmaz.
+  # Gerekli dataset split'lerinin varlığı ayrıca doğrulanır.
+
+  tokenize_examples: false
+  # Tokenization/model-window işlemleri dataset preparation'ın parçası değildir.
+
 
 sampling:
   use_subset: false
+  # Dataset preparation sırasında calibration veya test için
+  # deneysel sample-size limiti uygulanmaz.
+
   maximum_train_examples: null
   maximum_calibration_examples: null
   maximum_test_examples: null
+  # Nested N=200/500/1000/2000/3000 değerlendirmeleri daha sonra
+  # experiment layer'ında yapılır; dataset split'in kendisini değiştirmez.
 
-integrity_checks:
-  check_missing_fields: true
-  check_duplicate_ids: true
-  check_split_overlap: true
-  check_class_distribution: true
-  check_answer_spans: true
+
+integrity:
+  require_train_split: true
+  # Raw DatasetDict içinde train split'i bulunmalıdır.
+
+  require_validation_split: true
+  # Raw DatasetDict içinde validation split'i bulunmalıdır.
+
+  stratified_split: true
+  # Calibration/test assignment answerability sınıfına göre yapılır.
+
+  disjoint_calibration_and_test: true
+  # Calibration ve held-out test aynı source index'i paylaşmaz;
+  # ikisi farklı index listelerinden oluşturulur.
+
+  save_split_statistics: true
+  # Her final split için total/answerable/unanswerable counts kaydedilir.
+
+  save_split_manifest: true
+  # Source dataset, seed, fraction ve final split sizes kaydedilir.
+
 
 leakage_controls:
   tune_on_test_set: false
-  inspect_test_errors_before_finalization: false
-  modify_prompts_using_test_results: false
+  # Held-out test labels parameter tuning için kullanılmaz.
+
   fit_calibration_on_test_set: false
+  # Temperature scaling gibi calibration parametreleri
+  # yalnızca calibration split üzerinde fit edilir.
+
+  select_fusion_parameters_on_test_set: false
+  # Fusion weight seçimi held-out test sonuçlarına göre yapılmaz.
+
+  inspect_test_errors_before_parameter_selection: false
+  # Final parametre seçimi tamamlanmadan test error analysis
+  # model ayarlamak için kullanılmaz.
+
+  modify_predictions_manually: false
+  # Final prediction artifact'leri elle düzeltilmez.
+
 
 outputs:
   processed_dataset_dir: "data/processed/squad_v2"
+  # Hazırlanmış train/calibration/test DatasetDict.
+
   split_manifest: "data/processed/squad_v2/split_manifest.json"
+  # Source, seed, calibration fraction ve split sizes bilgisi.
+
   dataset_statistics: "data/processed/squad_v2/statistics.json"
+  # Her split'in answerability dağılımı.
