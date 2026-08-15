@@ -1,9 +1,39 @@
-"""Question-aware NLI verifier for validating QA predictions."""
+"""
+Verify QA predictions by converting question-answer pairs into claims and
+checking those claims against the context with Natural Language Inference.
+
+The workflow is:
+
+    question + predicted answer
+            ↓
+    declarative claim generation
+            ↓
+    context + claim
+            ↓
+    NLI classification
+            ↓
+    ENTAILMENT / NEUTRAL / CONTRADICTION
+
+A FLAN-T5 model converts each question-answer pair into a concise declarative
+claim. A pretrained MNLI model then treats the context as the premise and the
+generated claim as the hypothesis.
+
+The verifier records entailment, neutral, and contradiction probabilities
+together with a semantic label.
+
+Important limitations:
+
+- The NLI probabilities describe the NLI model's classification confidence;
+  they are not calibrated probabilities that the original QA answer is correct.
+- Claim generation is itself a model-based transformation and can introduce
+  wording errors or alter the original question-answer meaning.
+- Semantic agreement should therefore be interpreted as a verification signal,
+  not as proof of factual correctness.
+"""
 
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from collections import Counter
 from collections.abc import Iterable
@@ -11,131 +41,65 @@ from pathlib import Path
 from typing import Any
 
 import torch
-
-# AutoTokenizer -> Converts raw text into tokens/numbers the transformer model can understand.
-# AutoModelForSeq2SeqLM -> Used for text generation / text-to-text tasks.
-# AutoModelForSequenceClassification -> Used for classification, not generation.
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
 
-DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_hybrid_evidence.jsonl")
+from src.utils.io import load_jsonl, save_jsonl
 
-DEFAULT_OUTPUT_PATH = Path("outputs/predictions/calibration_with_question_aware_semantic_evidence.jsonl")
+DEFAULT_INPUT_PATH = Path(
+    "outputs/predictions/calibration_with_hybrid_evidence.jsonl"
+)
 
+DEFAULT_OUTPUT_PATH = Path(
+    "outputs/predictions/"
+    "calibration_with_question_aware_semantic_evidence.jsonl"
+)
 
-# Generates the claim from question + answer
-# It turns the QA pair into a normal statement.
-# Question: Who wrote Hamlet?
-# Answer: Shakespeare
-# -> Claim: Shakespeare wrote Hamlet.
+# Convert a question-answer pair into a declarative statement.
 DEFAULT_QA2D_MODEL = "google/flan-t5-base"
 
-# Checks the claim against evidence
-# It compares that claim with the evidence and decides:
-# Entailment -> evidence supports the claim.
-# Contradiction -> evidence says the claim is wrong.
-# Neutral -> evidence does not clearly support or reject the claim.
-# So: question + answer -> claim -> compare with evidence -> NLI label
+# Evaluate whether the context entails, contradicts, or is neutral toward
+# the generated question-answer claim.
 DEFAULT_NLI_MODEL = "FacebookAI/roberta-large-mnli"
 
-
-
-# maximum number of tokens taken from the evidence/context.
+DEFAULT_QA2D_MAX_INPUT_TOKENS = 256
 DEFAULT_MAX_CONTEXT_TOKENS = 384
-
-# maximum number of tokens allowed for the claim.
 DEFAULT_MAX_CLAIM_TOKENS = 96
-
-# maximum number of new tokens FLAN-T5 can generate when creating the claim.
 DEFAULT_GENERATION_MAX_NEW_TOKENS = 64
 
-
-# if entailment probability is at least 0.50, treat the claim as supported.
 DEFAULT_ENTAILMENT_THRESHOLD = 0.50
-
-# if contradiction probability is at least 0.50, treat the claim as contradicted.
 DEFAULT_CONTRADICTION_THRESHOLD = 0.50
 
-# process 8 examples together in one model batch.
 DEFAULT_BATCH_SIZE = 8
 
-
-# Loads a JSONL file, validates each non-empty line as a JSON object, and returns all records as a list of dictionaries.
-def load_jsonl(
-    path: str | Path
-) -> list[dict[str, Any]]:
-    input_path = Path(path)
-
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file does not exist: {input_path}")
-
-    records: list[dict[str, Any]] = []
-
-    with input_path.open(
-        "r",
-        encoding="utf-8"
-    ) as input_file:
-        for line_number, line in enumerate(
-            input_file,
-            start=1
-        ):
-            stripped_line = line.strip()
-
-            if not stripped_line:
-                continue
-
-            try:
-                record = json.loads(stripped_line)
-
-            except json.JSONDecodeError as error:
-                raise ValueError(
-                    f"Invalid JSON at line {line_number} in {input_path}: {error}"
-                ) from error
-
-            if not isinstance(record, dict):
-                raise TypeError(f"Line {line_number} must contain a JSON object.")
-
-            records.append(record)
-
-    return records
+NLI_MAX_TOTAL_TOKENS = 512
 
 
-# Saves dictionary records to a JSONL file, creating the parent directory if necessary and writing one JSON object per line.
-def save_jsonl(
-    records: Iterable[dict[str, Any]],
-    path: str | Path
-) -> None:
-    output_path = Path(path)
+def clean_text(text: str) -> str:
+    """
+    Normalize whitespace while preserving the original textual meaning.
 
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    Repeated spaces, line breaks, and tabs are collapsed into one space.
+    """
 
-    with output_path.open(
-        "w",
-        encoding="utf-8"
-    ) as output_file:
-        for record in records:
-            output_file.write(
-                json.dumps(
-                    record,
-                    ensure_ascii=False
-                )
-                + "\n"
-            )
+    return re.sub(r"\s+", " ", str(text)).strip()
 
 
-
-# Returns the first available non-None value from a list of possible field names, or returns a default value.
 def get_first_value(
     record: dict[str, Any],
     field_names: tuple[str, ...],
-    default: Any = None
+    default: Any = None,
 ) -> Any:
+    """
+    Return the first available non-None value from a group of field aliases.
+
+    Historical pipeline stages may store equivalent information under slightly
+    different field names, so aliases are checked from left to right.
+    """
+
     for field_name in field_names:
         value = record.get(field_name)
 
@@ -145,84 +109,71 @@ def get_first_value(
     return default
 
 
+def get_question(record: dict[str, Any]) -> str:
+    """Extract and clean the question text from one prediction record."""
 
-# Extracts and cleans the question text from a record using several possible question field names.
-def get_question(
-    record: dict[str, Any]
-) -> str:
     value = get_first_value(
         record=record,
         field_names=(
             "question",
             "question_text",
-            "query"
+            "query",
         ),
-        default=""
+        default="",
     )
 
     return clean_text(str(value))
 
 
+def get_predicted_answer(record: dict[str, Any]) -> str:
+    """Extract and clean the predicted QA answer from one record."""
 
-# Extracts and cleans the model's predicted answer from a record using several possible prediction field names.
-def get_predicted_answer(
-    record: dict[str, Any]
-) -> str:
     value = get_first_value(
         record=record,
         field_names=(
             "predicted_answer",
             "prediction_text",
             "prediction_answer",
-            "answer"
+            "answer",
         ),
-        default=""
+        default="",
     )
 
     return clean_text(str(value))
 
 
-# Extracts and cleans the context/evidence text from a record using several possible context field names.
-def get_context(
-    record: dict[str, Any]
-) -> str:
+def get_context(record: dict[str, Any]) -> str:
+    """Extract and clean the context used by the QA prediction."""
+
     value = get_first_value(
         record=record,
         field_names=(
             "context",
             "passage",
             "evidence_context",
-            "source_context"
+            "source_context",
         ),
-        default=""
+        default="",
     )
 
     return clean_text(str(value))
 
 
-# Cleans text by collapsing repeated whitespace and removing leading and trailing spaces.
-def clean_text(
-    text: str,
-) -> str:
-    return re.sub(
-        r"\s+",
-        " ",
-        str(text)
-    ).strip()
+def normalise_generated_claim(claim: str) -> str:
+    """
+    Clean the declarative claim generated by the QA-to-claim model.
 
+    Common generation prefixes and surrounding quotation marks are removed.
+    Terminal punctuation is added when necessary.
+    """
 
-
-# Cleans and standardizes a generated claim by removing common prefixes and quotes, then ensuring proper ending punctuation.
-def normalise_generated_claim(
-    claim: str
-) -> str:
     cleaned_claim = clean_text(claim)
 
     prefixes = (
         "statement:",
         "claim:",
         "declarative statement:",
-        "answer:"
+        "answer:",
     )
 
     lowered_claim = cleaned_claim.lower()
@@ -230,7 +181,6 @@ def normalise_generated_claim(
     for prefix in prefixes:
         if lowered_claim.startswith(prefix):
             cleaned_claim = cleaned_claim[len(prefix) :].strip()
-
             break
 
     cleaned_claim = cleaned_claim.strip("\"' ")
@@ -241,12 +191,18 @@ def normalise_generated_claim(
     return cleaned_claim
 
 
-
-# Builds the QA-to-declarative prompt that instructs the generation model to convert a question and answer into one concise, self-contained claim.
 def build_qa2d_prompt(
     question: str,
-    answer: str
+    answer: str,
 ) -> str:
+    """
+    Build the instruction used to convert a QA pair into a declarative claim.
+
+    The generator is explicitly asked to preserve meaning and avoid introducing
+    additional facts because the generated statement will later become the NLI
+    hypothesis.
+    """
+
     return (
         "Convert the following question and answer into "
         "one concise, self-contained declarative statement. "
@@ -258,44 +214,78 @@ def build_qa2d_prompt(
     )
 
 
-
-# Creates a simple fallback claim from the question and answer when normal claim generation is unavailable or fails.
 def fallback_claim(
     question: str,
     answer: str,
 ) -> str:
+    """
+    Build a deterministic fallback claim if generation produces empty text.
+
+    This fallback preserves the original QA content without requiring another
+    generation attempt.
+    """
+
     return f'The answer to the question "{question}" is "{answer}".'
 
 
-
-
 def select_device() -> torch.device:
+    """
+    Select the best available inference device.
+
+    CUDA is preferred when an NVIDIA GPU is available, followed by Apple's MPS
+    backend. CPU is used otherwise.
+    """
+
     if torch.cuda.is_available():
         return torch.device("cuda")
 
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    if (
+        hasattr(torch.backends, "mps")
+        and torch.backends.mps.is_available()
+    ):
         return torch.device("mps")
 
     return torch.device("cpu")
 
 
 class QuestionToClaimConverter:
+    """
+    Convert question-answer pairs into declarative NLI hypotheses.
+
+    The pretrained sequence-to-sequence model is used only for inference.
+    Its parameters are not trained or fine-tuned by this module.
+    """
+
     def __init__(
         self,
         model_name: str,
         device: torch.device,
         max_input_tokens: int,
-        max_new_tokens: int
+        max_new_tokens: int,
     ) -> None:
+        if max_input_tokens <= 0:
+            raise ValueError(
+                "max_input_tokens must be greater than zero."
+            )
+
+        if max_new_tokens <= 0:
+            raise ValueError(
+                "max_new_tokens must be greater than zero."
+            )
+
         self.device = device
         self.max_input_tokens = max_input_tokens
         self.max_new_tokens = max_new_tokens
 
         print(f"Loading QA-to-claim model: {model_name}")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name
+        )
 
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name
+        )
 
         self.model.to(self.device)
         self.model.eval()
@@ -306,8 +296,19 @@ class QuestionToClaimConverter:
         questions: list[str],
         answers: list[str],
     ) -> list[str]:
+        """
+        Convert a batch of question-answer pairs into declarative claims.
+
+        Beam search is deterministic here because sampling is disabled.
+        """
+
         if len(questions) != len(answers):
-            raise ValueError("Question and answer batch sizes must match.")
+            raise ValueError(
+                "Question and answer batch sizes must match."
+            )
+
+        if not questions:
+            return []
 
         prompts = [
             build_qa2d_prompt(
@@ -329,7 +330,8 @@ class QuestionToClaimConverter:
         )
 
         encoded_inputs = {
-            key: value.to(self.device) for key, value in encoded_inputs.items()
+            key: value.to(self.device)
+            for key, value in encoded_inputs.items()
         }
 
         generated_ids = self.model.generate(
@@ -354,7 +356,9 @@ class QuestionToClaimConverter:
             answers,
             generated_claims,
         ):
-            normalised_claim = normalise_generated_claim(claim)
+            normalised_claim = normalise_generated_claim(
+                claim
+            )
 
             if not normalised_claim:
                 normalised_claim = fallback_claim(
@@ -362,12 +366,29 @@ class QuestionToClaimConverter:
                     answer=answer,
                 )
 
-            final_claims.append(normalised_claim)
+            final_claims.append(
+                normalised_claim
+            )
 
         return final_claims
 
 
 class QuestionAwareNLIVerifier:
+    """
+    Verify generated QA claims against their source contexts using NLI.
+
+    The context is treated as the NLI premise and the generated declarative
+    claim as the hypothesis.
+
+    The model produces probabilities for:
+
+    - ENTAILMENT: context supports the claim
+    - NEUTRAL: context neither clearly supports nor rejects the claim
+    - CONTRADICTION: context conflicts with the claim
+
+    These probabilities belong to the NLI classifier and should not be treated
+    as calibrated probabilities of QA correctness.
+    """
 
     def __init__(
         self,
@@ -378,36 +399,61 @@ class QuestionAwareNLIVerifier:
         entailment_threshold: float,
         contradiction_threshold: float,
     ) -> None:
+        if max_context_tokens <= 0:
+            raise ValueError(
+                "max_context_tokens must be greater than zero."
+            )
+
+        if max_claim_tokens <= 0:
+            raise ValueError(
+                "max_claim_tokens must be greater than zero."
+            )
+
+        if not 0.0 <= entailment_threshold <= 1.0:
+            raise ValueError(
+                "Entailment threshold must be between 0 and 1."
+            )
+
+        if not 0.0 <= contradiction_threshold <= 1.0:
+            raise ValueError(
+                "Contradiction threshold must be between 0 and 1."
+            )
+
         self.device = device
-
         self.max_context_tokens = max_context_tokens
-
         self.max_claim_tokens = max_claim_tokens
-
         self.entailment_threshold = entailment_threshold
-
         self.contradiction_threshold = contradiction_threshold
 
         print(f"Loading NLI model: {model_name}")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name
+        )
 
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model = (
+            AutoModelForSequenceClassification.from_pretrained(
+                model_name
+            )
+        )
 
         self.model.to(self.device)
         self.model.eval()
 
         self.label_to_id = self._resolve_label_ids()
 
-    def _resolve_label_ids(
-        self,
-    ) -> dict[str, int]:
+    def _resolve_label_ids(self) -> dict[str, int]:
+        """
+        Resolve semantic NLI labels to the model's numerical class IDs.
+
+        Label ordering can differ across model configurations, so the verifier
+        reads the model metadata instead of assuming fixed class positions.
+        """
 
         resolved_labels: dict[str, int] = {}
 
         for raw_id, raw_label in self.model.config.id2label.items():
             label = str(raw_label).strip().lower()
-
             label_id = int(raw_id)
 
             if "entail" in label:
@@ -425,14 +471,15 @@ class QuestionAwareNLIVerifier:
             "contradiction",
         }
 
-        missing_labels = required_labels - set(resolved_labels)
+        missing_labels = (
+            required_labels - set(resolved_labels)
+        )
 
         if missing_labels:
             raise ValueError(
                 "Could not resolve NLI label IDs. "
                 f"Missing: {sorted(missing_labels)}. "
-                f"Model labels: "
-                f"{self.model.config.id2label}"
+                f"Model labels: {self.model.config.id2label}"
             )
 
         return resolved_labels
@@ -442,6 +489,11 @@ class QuestionAwareNLIVerifier:
         text: str,
         max_tokens: int,
     ) -> str:
+        """
+        Restrict one text to a maximum number of NLI tokenizer tokens.
+
+        Truncation keeps model inputs within the configured computational limit.
+        """
 
         token_ids = self.tokenizer.encode(
             text,
@@ -462,11 +514,24 @@ class QuestionAwareNLIVerifier:
         neutral_probability: float,
         contradiction_probability: float,
     ) -> str:
+        """
+        Convert NLI probabilities into a semantic label.
 
-        if contradiction_probability >= self.contradiction_threshold:
+        Configured contradiction and entailment thresholds receive priority.
+        If neither threshold is reached, the highest-probability NLI class is
+        used as a fallback.
+        """
+
+        if (
+            contradiction_probability
+            >= self.contradiction_threshold
+        ):
             return "CONTRADICTION"
 
-        if entailment_probability >= self.entailment_threshold:
+        if (
+            entailment_probability
+            >= self.entailment_threshold
+        ):
             return "ENTAILMENT"
 
         largest_probability = max(
@@ -489,13 +554,24 @@ class QuestionAwareNLIVerifier:
         contexts: list[str],
         claims: list[str],
     ) -> list[dict[str, Any]]:
+        """
+        Run NLI inference for a batch of context/claim pairs.
+
+        Contexts are NLI premises and claims are hypotheses.
+        """
+
         if len(contexts) != len(claims):
-            raise ValueError("Context and claim batch sizes must match.")
+            raise ValueError(
+                "Context and claim batch sizes must match."
+            )
+
+        if not contexts:
+            return []
 
         truncated_contexts = [
             self._truncate_text(
                 text=context,
-                max_tokens=(self.max_context_tokens),
+                max_tokens=self.max_context_tokens,
             )
             for context in contexts
         ]
@@ -503,7 +579,7 @@ class QuestionAwareNLIVerifier:
         truncated_claims = [
             self._truncate_text(
                 text=claim,
-                max_tokens=(self.max_claim_tokens),
+                max_tokens=self.max_claim_tokens,
             )
             for claim in claims
         ]
@@ -513,12 +589,13 @@ class QuestionAwareNLIVerifier:
             truncated_claims,
             padding=True,
             truncation="only_first",
-            max_length=512,
+            max_length=NLI_MAX_TOTAL_TOKENS,
             return_tensors="pt",
         )
 
         encoded_inputs = {
-            key: value.to(self.device) for key, value in encoded_inputs.items()
+            key: value.to(self.device)
+            for key, value in encoded_inputs.items()
         }
 
         outputs = self.model(**encoded_inputs)
@@ -534,23 +611,35 @@ class QuestionAwareNLIVerifier:
 
         results: list[dict[str, Any]] = []
 
-        entailment_id = self.label_to_id["entailment"]
+        entailment_id = self.label_to_id[
+            "entailment"
+        ]
 
-        neutral_id = self.label_to_id["neutral"]
+        neutral_id = self.label_to_id[
+            "neutral"
+        ]
 
-        contradiction_id = self.label_to_id["contradiction"]
+        contradiction_id = self.label_to_id[
+            "contradiction"
+        ]
 
         for row in probabilities:
-            entailment_probability = float(row[entailment_id].item())
+            entailment_probability = float(
+                row[entailment_id].item()
+            )
 
-            neutral_probability = float(row[neutral_id].item())
+            neutral_probability = float(
+                row[neutral_id].item()
+            )
 
-            contradiction_probability = float(row[contradiction_id].item())
+            contradiction_probability = float(
+                row[contradiction_id].item()
+            )
 
             semantic_label = self._assign_label(
-                entailment_probability=(entailment_probability),
-                neutral_probability=(neutral_probability),
-                contradiction_probability=(contradiction_probability),
+                entailment_probability=entailment_probability,
+                neutral_probability=neutral_probability,
+                contradiction_probability=contradiction_probability,
             )
 
             semantic_confidence = max(
@@ -561,11 +650,17 @@ class QuestionAwareNLIVerifier:
 
             results.append(
                 {
-                    "qa_nli_label": (semantic_label),
-                    "qa_nli_confidence": (semantic_confidence),
-                    "qa_entailment_probability": (entailment_probability),
-                    "qa_neutral_probability": (neutral_probability),
-                    "qa_contradiction_probability": (contradiction_probability),
+                    "qa_nli_label": semantic_label,
+                    "qa_nli_confidence": semantic_confidence,
+                    "qa_entailment_probability": (
+                        entailment_probability
+                    ),
+                    "qa_neutral_probability": (
+                        neutral_probability
+                    ),
+                    "qa_contradiction_probability": (
+                        contradiction_probability
+                    ),
                 }
             )
 
@@ -576,8 +671,19 @@ def batched_indices(
     total_size: int,
     batch_size: int,
 ) -> Iterable[tuple[int, int]]:
+    """
+    Yield start/end index ranges for deterministic mini-batch processing.
+    """
+
+    if total_size < 0:
+        raise ValueError(
+            "total_size cannot be negative."
+        )
+
     if batch_size <= 0:
-        raise ValueError("Batch size must be positive.")
+        raise ValueError(
+            "Batch size must be positive."
+        )
 
     for start_index in range(
         0,
@@ -589,21 +695,24 @@ def batched_indices(
             total_size,
         )
 
-        yield (
-            start_index,
-            end_index,
-        )
+        yield start_index, end_index
 
 
 def validate_records(
     records: list[dict[str, Any]],
 ) -> None:
     """
-    Validate required data before model inference.
+    Validate required QA information before model inference.
+
+    Questions and contexts are mandatory. Empty predicted answers are allowed
+    but bypass claim generation and NLI inference, receiving the explicit
+    EMPTY_ANSWER diagnostic label.
     """
 
     if not records:
-        raise ValueError("Input file contains no predictions.")
+        raise ValueError(
+            "Input file contains no predictions."
+        )
 
     missing_questions = 0
     missing_answers = 0
@@ -620,16 +729,61 @@ def validate_records(
             missing_contexts += 1
 
     if missing_questions:
-        raise ValueError(f"{missing_questions} records do not contain a question.")
+        raise ValueError(
+            f"{missing_questions} records do not contain a question."
+        )
 
     if missing_contexts:
-        raise ValueError(f"{missing_contexts} records do not contain a context.")
+        raise ValueError(
+            f"{missing_contexts} records do not contain a context."
+        )
 
     if missing_answers:
         print(
             f"Warning: {missing_answers} records have "
             "empty predicted answers. They will receive "
             "EMPTY_ANSWER labels."
+        )
+
+
+def validate_runtime_settings(
+    batch_size: int,
+    max_context_tokens: int,
+    max_claim_tokens: int,
+    generation_max_new_tokens: int,
+    entailment_threshold: float,
+    contradiction_threshold: float,
+) -> None:
+    """Validate verifier batch, token, generation, and threshold settings."""
+
+    if batch_size <= 0:
+        raise ValueError(
+            "batch_size must be greater than zero."
+        )
+
+    if max_context_tokens <= 0:
+        raise ValueError(
+            "max_context_tokens must be greater than zero."
+        )
+
+    if max_claim_tokens <= 0:
+        raise ValueError(
+            "max_claim_tokens must be greater than zero."
+        )
+
+    if generation_max_new_tokens <= 0:
+        raise ValueError(
+            "generation_max_new_tokens must be greater than zero."
+        )
+
+    if not 0.0 <= entailment_threshold <= 1.0:
+        raise ValueError(
+            "Entailment threshold must be between 0 and 1."
+        )
+
+    if not 0.0 <= contradiction_threshold <= 1.0:
+        raise ValueError(
+            "Contradiction threshold must be between 0 and 1."
         )
 
 
@@ -645,15 +799,28 @@ def verify_predictions(
     entailment_threshold: float,
     contradiction_threshold: float,
 ) -> list[dict[str, Any]]:
+    """
+    Run the complete question-aware NLI verification pipeline.
+
+    Non-empty QA predictions are converted to declarative claims and verified
+    against their contexts with NLI.
+
+    Original prediction fields are preserved and enriched with claim-generation
+    metadata and semantic probabilities.
+    """
+
     records = load_jsonl(input_path)
 
     validate_records(records)
 
-    if not (0.0 <= entailment_threshold <= 1.0):
-        raise ValueError("Entailment threshold must be between 0 and 1.")
-
-    if not (0.0 <= contradiction_threshold <= 1.0):
-        raise ValueError("Contradiction threshold must be between 0 and 1.")
+    validate_runtime_settings(
+        batch_size=batch_size,
+        max_context_tokens=max_context_tokens,
+        max_claim_tokens=max_claim_tokens,
+        generation_max_new_tokens=generation_max_new_tokens,
+        entailment_threshold=entailment_threshold,
+        contradiction_threshold=contradiction_threshold,
+    )
 
     device = select_device()
 
@@ -662,17 +829,17 @@ def verify_predictions(
     claim_converter = QuestionToClaimConverter(
         model_name=qa2d_model_name,
         device=device,
-        max_input_tokens=256,
-        max_new_tokens=(generation_max_new_tokens),
+        max_input_tokens=DEFAULT_QA2D_MAX_INPUT_TOKENS,
+        max_new_tokens=generation_max_new_tokens,
     )
 
     nli_verifier = QuestionAwareNLIVerifier(
         model_name=nli_model_name,
         device=device,
-        max_context_tokens=(max_context_tokens),
-        max_claim_tokens=(max_claim_tokens),
-        entailment_threshold=(entailment_threshold),
-        contradiction_threshold=(contradiction_threshold),
+        max_context_tokens=max_context_tokens,
+        max_claim_tokens=max_claim_tokens,
+        entailment_threshold=entailment_threshold,
+        contradiction_threshold=contradiction_threshold,
     )
 
     verified_records: list[dict[str, Any]] = []
@@ -689,22 +856,46 @@ def verify_predictions(
         ),
         start=1,
     ):
-        batch_records = records[start_index:end_index]
+        batch_records = records[
+            start_index:end_index
+        ]
 
-        questions = [get_question(record) for record in batch_records]
+        questions = [
+            get_question(record)
+            for record in batch_records
+        ]
 
-        answers = [get_predicted_answer(record) for record in batch_records]
+        answers = [
+            get_predicted_answer(record)
+            for record in batch_records
+        ]
 
-        contexts = [get_context(record) for record in batch_records]
+        contexts = [
+            get_context(record)
+            for record in batch_records
+        ]
 
-        claims: list[str] = ["" for _ in batch_records]
+        claims: list[str] = [
+            ""
+            for _ in batch_records
+        ]
 
-        non_empty_indices = [index for index, answer in enumerate(answers) if answer]
+        non_empty_indices = [
+            index
+            for index, answer in enumerate(answers)
+            if answer
+        ]
 
         if non_empty_indices:
             generated_claims = claim_converter.convert_batch(
-                questions=[questions[index] for index in non_empty_indices],
-                answers=[answers[index] for index in non_empty_indices],
+                questions=[
+                    questions[index]
+                    for index in non_empty_indices
+                ],
+                answers=[
+                    answers[index]
+                    for index in non_empty_indices
+                ],
             )
 
             for local_index, claim in zip(
@@ -713,9 +904,11 @@ def verify_predictions(
             ):
                 claims[local_index] = claim
 
+        # Empty answers do not enter NLI inference. The values below are explicit
+        # bookkeeping placeholders describing that no answer claim was verified.
         nli_results: list[dict[str, Any]] = [
             {
-                "qa_nli_label": ("EMPTY_ANSWER"),
+                "qa_nli_label": "EMPTY_ANSWER",
                 "qa_nli_confidence": 1.0,
                 "qa_entailment_probability": 0.0,
                 "qa_neutral_probability": 1.0,
@@ -726,8 +919,14 @@ def verify_predictions(
 
         if non_empty_indices:
             verified_non_empty = nli_verifier.verify_batch(
-                contexts=[contexts[index] for index in non_empty_indices],
-                claims=[claims[index] for index in non_empty_indices],
+                contexts=[
+                    contexts[index]
+                    for index in non_empty_indices
+                ],
+                claims=[
+                    claims[index]
+                    for index in non_empty_indices
+                ],
             )
 
             for local_index, result in zip(
@@ -741,50 +940,60 @@ def verify_predictions(
             question,
             answer,
             claim,
-            result
+            result,
         ) in zip(
             batch_records,
             questions,
             answers,
             claims,
-            nli_results
+            nli_results,
         ):
             updated_record = dict(record)
 
             updated_record.update(
                 {
-                    "qa_claim": (claim if claim else None),
-                    "qa_claim_question": (question),
-                    "qa_claim_answer": (answer),
+                    "qa_claim": (
+                        claim if claim else None
+                    ),
+                    "qa_claim_question": question,
+                    "qa_claim_answer": answer,
                     **result,
-                    "qa_nli_model": (nli_model_name),
-                    "qa_claim_generator_model": (qa2d_model_name)
+                    "qa_nli_model": nli_model_name,
+                    "qa_claim_generator_model": (
+                        qa2d_model_name
+                    ),
                 }
             )
 
-            verified_records.append(updated_record)
+            verified_records.append(
+                updated_record
+            )
 
-        print(f"Processed {end_index}/{total_records} records (batch {batch_number}).")
+        print(
+            f"Processed {end_index}/{total_records} "
+            f"records (batch {batch_number})."
+        )
 
     save_jsonl(
-        records=verified_records,
-        path=output_path
+        verified_records,
+        output_path,
     )
 
     label_counts = Counter(
         str(
             record.get(
                 "qa_nli_label",
-                "UNKNOWN"
+                "UNKNOWN",
             )
         )
         for record in verified_records
     )
 
-    print("\nQuestion-aware semantic verification completed.")
+    print(
+        "\nQuestion-aware semantic verification completed."
+    )
 
     print(f"Input:  {input_path}")
-
     print(f"Output: {output_path}")
 
     print("\nLabel distribution:")
@@ -795,76 +1004,78 @@ def verify_predictions(
         "CONTRADICTION",
         "EMPTY_ANSWER",
     ):
-        print(f"{label:<16}: {label_counts.get(label, 0)}")
+        print(
+            f"{label:<16}: "
+            f"{label_counts.get(label, 0)}"
+        )
 
     return verified_records
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Parse command-line arguments.
-    """
+    """Parse question-aware NLI verification settings."""
 
     parser = argparse.ArgumentParser(
         description=(
-            "Generate question-answer claims and verify them against context using NLI."
+            "Generate question-answer claims and verify "
+            "them against context using NLI."
         )
     )
 
     parser.add_argument(
         "--input",
-        default=str(DEFAULT_INPUT_PATH)
+        default=str(DEFAULT_INPUT_PATH),
     )
 
     parser.add_argument(
         "--output",
-        default=str(DEFAULT_OUTPUT_PATH)
+        default=str(DEFAULT_OUTPUT_PATH),
     )
 
     parser.add_argument(
         "--qa2d-model",
-        default=DEFAULT_QA2D_MODEL
+        default=DEFAULT_QA2D_MODEL,
     )
 
     parser.add_argument(
         "--nli-model",
-        default=DEFAULT_NLI_MODEL
+        default=DEFAULT_NLI_MODEL,
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=DEFAULT_BATCH_SIZE
+        default=DEFAULT_BATCH_SIZE,
     )
 
     parser.add_argument(
         "--max-context-tokens",
         type=int,
-        default=(DEFAULT_MAX_CONTEXT_TOKENS)
+        default=DEFAULT_MAX_CONTEXT_TOKENS,
     )
 
     parser.add_argument(
         "--max-claim-tokens",
         type=int,
-        default=(DEFAULT_MAX_CLAIM_TOKENS)
+        default=DEFAULT_MAX_CLAIM_TOKENS,
     )
 
     parser.add_argument(
         "--generation-max-new-tokens",
         type=int,
-        default=(DEFAULT_GENERATION_MAX_NEW_TOKENS)
+        default=DEFAULT_GENERATION_MAX_NEW_TOKENS,
     )
 
     parser.add_argument(
         "--entailment-threshold",
         type=float,
-        default=(DEFAULT_ENTAILMENT_THRESHOLD)
+        default=DEFAULT_ENTAILMENT_THRESHOLD,
     )
 
     parser.add_argument(
         "--contradiction-threshold",
         type=float,
-        default=(DEFAULT_CONTRADICTION_THRESHOLD)
+        default=DEFAULT_CONTRADICTION_THRESHOLD,
     )
 
     return parser.parse_args()
@@ -876,12 +1087,16 @@ if __name__ == "__main__":
     verify_predictions(
         input_path=arguments.input,
         output_path=arguments.output,
-        qa2d_model_name=(arguments.qa2d_model),
-        nli_model_name=(arguments.nli_model),
+        qa2d_model_name=arguments.qa2d_model,
+        nli_model_name=arguments.nli_model,
         batch_size=arguments.batch_size,
-        max_context_tokens=(arguments.max_context_tokens),
-        max_claim_tokens=(arguments.max_claim_tokens),
-        generation_max_new_tokens=(arguments.generation_max_new_tokens),
-        entailment_threshold=(arguments.entailment_threshold),
-        contradiction_threshold=(arguments.contradiction_threshold)
+        max_context_tokens=arguments.max_context_tokens,
+        max_claim_tokens=arguments.max_claim_tokens,
+        generation_max_new_tokens=(
+            arguments.generation_max_new_tokens
+        ),
+        entailment_threshold=arguments.entailment_threshold,
+        contradiction_threshold=(
+            arguments.contradiction_threshold
+        ),
     )

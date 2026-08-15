@@ -1,60 +1,67 @@
 """
-The main purpose of this file is to run a raw question-answering baseline that always gives an answer and never abstains.
-It loads a selected dataset split, runs the RoBERTa SQuAD 2.0 model on each example, stores the predicted answer, confidence, reference answers, and metadata, then saves all predictions as a JSONL file for later evaluation and comparison.
+Run the project's forced-answer extractive QA baseline.
+
+The pretrained RoBERTa SQuAD v2 model is applied to each example and is forced
+to return a non-empty answer span by disabling its native no-answer behavior.
+This baseline therefore never abstains.
+
+The resulting predictions are saved with their raw pipeline scores, reference
+answers, answerability labels, and experiment metadata for later calibration,
+verification, and selective-ranking evaluation.
 """
 
-# argparse is used to read command-line arguments when you run the script from the terminal.
 import argparse
-
-# is used to create and manage file paths safely.
 from pathlib import Path
-
-# Any is a flexible type hint that allows a variable or dictionary value to contain any Python data type.
 from typing import Any
 
-# is the main PyTorch library used for tensor operations and running neural-network models.
 import torch
-
-# Dataset represents one dataset split, such as only train.
-# DatasetDict represents several splits together, such as train, calibration, and test.
-# load_from_disk loads a dataset that was previously saved locally.
 from datasets import Dataset, DatasetDict, load_from_disk
-
-# creates a ready-to-use Transformers task pipeline, such as question answering, without manually writing the full model and tokenizer inference code.
 from transformers import pipeline
 
 from src.utils.io import save_jsonl
 
-# stores the Hugging Face model identifier that the QA pipeline will load.
-# Here, it selects a RoBERTa model trained for SQuAD 2.0, so it can answer questions and also handle unanswerable ones.
+# Pretrained extractive QA backbone (ana soru-cevap modeli) used throughout
+# the project. Extractive QA means the model selects an answer span directly
+# from the provided context instead of generating a new free-form answer.
 MODEL_NAME = "deepset/roberta-base-squad2"
-
 
 DATASET_PATH = Path("data/processed/squad_v2")
 
 OUTPUT_DIR = Path("outputs/predictions")
 
 
-# chooses which hardware PyTorch should use:
-# We need it so the model runs on the best available hardware instead of always using the CPU. A GPU can make inference much faster, while the availability checks prevent the program from requesting hardware that does not exist.
 def select_device(device_name: str) -> torch.device:
+    """
+    Select the hardware device used for QA inference.
+
+    CUDA refers to NVIDIA GPU execution, while MPS is Apple's GPU backend.
+    If the requested accelerator is unavailable, the function raises an error
+    instead of silently running the experiment on different hardware.
+    """
     if device_name == "cuda":
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA was requested but isnt avalable yet")
+            raise RuntimeError("CUDA was requested but is not available.")
 
         return torch.device("cuda")
 
     if device_name == "mps":
         if not torch.backends.mps.is_available():
-            raise RuntimeError("MPS was requested but is not available yet")
+            raise RuntimeError("MPS was requested but is not available.")
 
         return torch.device("mps")
 
     return torch.device("cpu")
 
 
-# loads the prepared dataset from disk, checks that it has the expected structure, verifies that the requested split exists, and returns only that split.
 def load_split(split_name: str) -> Dataset:
+    """
+    Load one split from the processed SQuAD v2 dataset.
+
+    A split (veri bölümü) is one of train, calibration, or test. Loading the
+    requested split explicitly helps keep calibration and held-out evaluation
+    data separate during experiments.
+    """
+
     if not DATASET_PATH.exists():
         raise FileNotFoundError(
             f"Processed dataset not found at: {DATASET_PATH}\n"
@@ -74,24 +81,37 @@ def load_split(split_name: str) -> Dataset:
     return dataset[split_name]
 
 
-# extracts all correct answer texts from one dataset example and returns them as a list of strings.
-# For an unanswerable example, it returns an empty list.
+
 def build_reference_answers(example: dict[str, Any]) -> list[str]:
+    """Return all gold answer texts, or an empty list for unanswerable examples."""
     answers = example.get("answers", {})
 
     return list(answers.get("text", []))
 
 
-# runs the basic question-answering model on a selected dataset split and saves all predictions as a JSONL file.
-# It loads the split, optionally limits the number of examples, selects CPU/GPU, generates one answer for each question, stores the prediction details, and always uses the decision "ANSWER" without abstaining.
+
 def run_raw_baseline(
     split_name: str = "calibration", limit: int | None = 10, device_name: str = "cpu"
 ) -> list[dict[str, Any]]:
-    # loads only the requested dataset split, such as "calibration" or "test".
+    """
+    Run the forced-answer extractive QA baseline on one dataset split.
+
+    Forced-answer (zorunlu cevap) means the model is not allowed to use its
+    native no-answer option. Every example must therefore receive a non-empty
+    answer span, including questions that are actually unanswerable.
+
+    These raw predictions become the common starting point for later confidence
+    calibration, verification, and selective-ranking experiments.
+
+    The raw Hugging Face pipeline score stored here is not yet the calibrated
+    confidence used in the final evaluation.
+    """
+
+    # Load only the requested experimental split.
     dataset = load_split(split_name)
 
-    # limit means the maximum number of dataset examples the function will process.
-    # For example, limit=10 processes only the first 10 examples; limit=None processes the entire selected split.
+    # Optionally restrict the number of examples for a smoke test (hızlı sistem
+    # kontrolü) or debugging. limit=None processes the entire selected split.
     if limit is not None:
         if limit <= 0:
             raise ValueError("limit must be greater than zero.")
@@ -104,16 +124,20 @@ def run_raw_baseline(
     print(f"Using device: {device}")
     print(f"Number of examples: {len(dataset)}")
 
-    # creates a ready-to-use Hugging Face question-answering system.
+    # Build the pretrained extractive QA inference pipeline.
     qa_model = pipeline(
         task="question-answering", model=MODEL_NAME, tokenizer=MODEL_NAME, device=device
     )
 
-    # creates an empty list that will store one prediction dictionary for each dataset example.
+    # Store one structured prediction record for every processed example.
     predictions: list[dict[str, Any]] = []
 
-    # loops through every dataset example and also gives each one a visible number starting from 1.
     for index, example in enumerate(dataset, start=1):
+        # Disable the model's native no-answer mechanism, forcing it to propose answer
+        # spans even for examples that may actually be unanswerable.
+        # top_k=5 returns several ranked candidate spans. If the first candidate is
+        # empty or has an invalid character span, the next valid candidate can be used
+        # without changing the forced-answer nature of the baseline.
         candidates = qa_model(
             question=example["question"],
             context=example["context"],
@@ -121,9 +145,14 @@ def run_raw_baseline(
             handle_impossible_answer=False,
         )
 
+        # Hugging Face may return either one dictionary or a list depending on the
+        # pipeline output. Convert both cases to a list so filtering is consistent.
         if isinstance(candidates, dict):
             candidates = [candidates]
 
+        # Select the highest-ranked valid extractive span.
+        # A valid span must contain non-empty text and its end character position must
+        # be greater than its start position.
         result = next(
             (
                 candidate
@@ -139,9 +168,11 @@ def run_raw_baseline(
                 f"No valid non-empty answer span found for example: {example['id']}"
             )
 
-        # This is one prediction record stored as a Python dictionary. It collects everything about one question, the model’s answer, and the experiment setup.
+        # Store both the QA result and experiment metadata (deneyi tanımlayan ek bilgi)
+        # required by later stages such as calibration, verification, and evaluation.
+        # pipeline_score is the raw Hugging Face span score. It must not be confused
+        # with the temperature-calibrated confidence computed later in the pipeline.
         prediction = {
-            # unique example ID.
             "id": example["id"],
             # the question given to the model.
             "question": example["question"],
@@ -174,10 +205,12 @@ def run_raw_baseline(
         print(f"\nExample {index}/{len(dataset)}")
         print(f"Question: {example['question']}")
         print(f"Prediction: {result['answer']}")
-        print(f"Confidence: {result['score']:.4f}")
+        print(f"Pipeline score: {result['score']:.4f}")
         print(f"Answerable: {example['is_answerable']}")
         print("Decision: ANSWER")
 
+    # Predictions are experiment artifacts, so they are stored under outputs/
+    # rather than modifying the processed dataset itself.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     output_path = OUTPUT_DIR / f"raw_baseline_{split_name}.jsonl"
@@ -189,11 +222,11 @@ def run_raw_baseline(
     return predictions
 
 
-# reads options given from the terminal and converts them into a Python object.
-# It lets the user choose the dataset split, number of examples, and device without changing the code.
 def parse_arguments() -> argparse.Namespace:
+    """Parse command-line options for split, sample limit, and inference device."""
+
     parser = argparse.ArgumentParser(
-        description=("Run the raw question-answering baseline.")
+        description="Run the forced-answer extractive QA baseline."
     )
 
     parser.add_argument(

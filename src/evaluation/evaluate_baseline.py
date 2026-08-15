@@ -1,18 +1,37 @@
 """
-Evaluates the raw QA baseline by measuring its prediction quality with metrics such as accuracy, Exact Match, F1, coverage, abstention rate, and selective risk, then saves the results.
+Evaluate the raw forced-answer QA baseline.
+
+This module applies the project's shared selective-QA evaluation metrics to
+raw baseline predictions and saves:
+
+1. per-example evaluated predictions, and
+2. an aggregate JSON metrics summary.
+
+The raw baseline is evaluated using the same metric implementation used by
+other project components so that correctness definitions remain consistent.
+
+Important
+---------
+`accuracy` represents selective-QA task correctness.
+
+`exact_match` and `token_f1` follow the project's answer-text evaluation
+convention and should not automatically be presented as official SQuAD v2
+metrics.
 """
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
 from src.evaluation.metrics import (
-    calculate_metrics,
-    evaluate_single_prediction,
+    calculate_metrics_from_evaluated,
+)
+from src.evaluation.metrics import (
+    evaluate_predictions as evaluate_metric_predictions,
 )
 from src.utils.io import (
     load_jsonl,
+    save_json,
     save_jsonl,
 )
 
@@ -21,7 +40,8 @@ DEFAULT_INPUT_PATH = Path(
 )
 
 DEFAULT_EVALUATED_OUTPUT_PATH = Path(
-    "outputs/predictions/raw_baseline_evaluated_calibration.jsonl"
+    "outputs/predictions/"
+    "raw_baseline_evaluated_calibration.jsonl"
 )
 
 DEFAULT_METRICS_OUTPUT_PATH = Path(
@@ -29,10 +49,21 @@ DEFAULT_METRICS_OUTPUT_PATH = Path(
 )
 
 
-# Checks that the prediction list is not empty and that every prediction contains the required fields: decision and is_answerable.
 def validate_predictions(
     predictions: list[dict[str, Any]],
 ) -> None:
+    """
+    Validate fields required by the shared selective-QA evaluator.
+
+    Every raw baseline record must contain:
+
+    - `decision`
+    - `is_answerable`
+
+    More detailed validation of decision values, answerability values, and
+    reference-answer structure is performed by the shared metrics module.
+    """
+
     if not predictions:
         raise ValueError(
             "Prediction list cannot be empty."
@@ -40,15 +71,16 @@ def validate_predictions(
 
     required_fields = {
         "decision",
-        "is_answerable"
+        "is_answerable",
     }
 
     for index, prediction in enumerate(
         predictions,
-        start=1
+        start=1,
     ):
         missing_fields = (
-            required_fields - prediction.keys()
+            required_fields
+            - prediction.keys()
         )
 
         if missing_fields:
@@ -64,25 +96,62 @@ def validate_predictions(
             )
 
 
-# Validates the predictions and evaluates each one individually, returning the evaluated results as a list.
 def evaluate_predictions(
     predictions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    validate_predictions(predictions)
+    """
+    Evaluate all raw baseline predictions using the shared metric logic.
 
-    return [
-        evaluate_single_prediction(prediction)
-        for prediction in predictions
-    ]
+    This wrapper preserves the baseline evaluator's public interface while
+    delegating actual correctness calculations to `src.evaluation.metrics`.
+    """
+
+    validate_predictions(
+        predictions
+    )
+
+    return evaluate_metric_predictions(
+        predictions
+    )
 
 
-# Creates a baseline evaluation summary containing the system/model information, dataset split, number of predictions, and calculated performance metrics.
 def build_baseline_summary(
     predictions: list[dict[str, Any]],
+    evaluated_predictions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    validate_predictions(predictions)
+    """
+    Build the aggregate raw-baseline evaluation summary.
 
-    metrics = calculate_metrics(predictions)
+    When already evaluated records are supplied, metrics are aggregated directly
+    from those records rather than evaluating the same predictions a second
+    time.
+    """
+
+    validate_predictions(
+        predictions
+    )
+
+    if evaluated_predictions is None:
+        evaluated_predictions = (
+            evaluate_predictions(
+                predictions
+            )
+        )
+
+    if (
+        len(evaluated_predictions)
+        != len(predictions)
+    ):
+        raise ValueError(
+            "Evaluated prediction count does not "
+            "match raw prediction count."
+        )
+
+    metrics = (
+        calculate_metrics_from_evaluated(
+            evaluated_predictions
+        )
+    )
 
     first_prediction = predictions[0]
 
@@ -90,81 +159,90 @@ def build_baseline_summary(
         "evaluation_type": "raw_qa_baseline",
         "system": first_prediction.get(
             "system",
-            "unknown"
+            "unknown",
         ),
         "model": first_prediction.get(
             "model",
-            "unknown"
+            "unknown",
         ),
         "split": first_prediction.get(
             "split",
-            "unknown"
+            "unknown",
         ),
-        "total_predictions": len(predictions),
-        "metrics": metrics
+        "total_predictions": len(
+            predictions
+        ),
+        "metrics": metrics,
     }
 
 
-# Saves the evaluation summary as a readable JSON file and creates the output folder if it does not already exist.
 def save_metrics(
     summary: dict[str, Any],
-    output_path: str | Path
+    output_path: str | Path,
 ) -> None:
-    output_path = Path(output_path)
+    """
+    Save the aggregate baseline summary as formatted JSON.
 
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True
+    Shared repository I/O is used so JSON serialization behavior remains
+    consistent across experiment scripts.
+    """
+
+    save_json(
+        summary,
+        output_path,
     )
 
-    with output_path.open(
-        "w",
-        encoding="utf-8"
-    ) as output_file:
-        json.dump(
-            summary,
-            output_file,
-            indent=2,
-            ensure_ascii=False
-        )
 
-
-# Runs the complete baseline evaluation: loads predictions, evaluates them, calculates metrics, saves both detailed results and the summary, and prints the main performance scores.
 def run_baseline_evaluation(
     input_path: str | Path,
     evaluated_output_path: str | Path,
-    metrics_output_path: str | Path
+    metrics_output_path: str | Path,
 ) -> dict[str, Any]:
-    predictions = load_jsonl(input_path)
+    """
+    Run the complete raw-baseline evaluation workflow.
+
+    The function:
+
+    1. loads raw predictions,
+    2. validates and evaluates every prediction,
+    3. aggregates project metrics,
+    4. saves per-example evaluated records,
+    5. saves the aggregate metrics summary,
+    6. prints the main results.
+    """
+
+    predictions = load_jsonl(
+        input_path
+    )
 
     evaluated_predictions = (
-        evaluate_predictions(predictions)
+        evaluate_predictions(
+            predictions
+        )
     )
 
-    summary = build_baseline_summary(
-        predictions
-    )
-
-    evaluated_output_path = Path(
-        evaluated_output_path
-    )
-
-    evaluated_output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True
+    summary = (
+        build_baseline_summary(
+            predictions=predictions,
+            evaluated_predictions=(
+                evaluated_predictions
+            ),
+        )
     )
 
     save_jsonl(
         evaluated_predictions,
-        evaluated_output_path
+        evaluated_output_path,
     )
 
     save_metrics(
         summary=summary,
-        output_path=metrics_output_path
+        output_path=metrics_output_path,
     )
 
-    metrics = summary["metrics"]
+    metrics = summary[
+        "metrics"
+    ]
 
     print(
         "\nBaseline evaluation completed."
@@ -176,17 +254,17 @@ def run_baseline_evaluation(
     )
 
     print(
-        f"Accuracy: "
+        f"Task accuracy: "
         f"{metrics['accuracy']:.4f}"
     )
 
     print(
-        f"Exact Match: "
+        f"Project Exact Match: "
         f"{metrics['exact_match']:.4f}"
     )
 
     print(
-        f"Token F1: "
+        f"Project Token F1: "
         f"{metrics['token_f1']:.4f}"
     )
 
@@ -211,7 +289,7 @@ def run_baseline_evaluation(
     )
 
     print(
-        f"Evaluated predictions saved to: "
+        "Evaluated predictions saved to: "
         f"{evaluated_output_path}"
     )
 
@@ -223,38 +301,44 @@ def run_baseline_evaluation(
     return summary
 
 
-# Defines and reads command-line arguments for the baseline evaluation, including input predictions and output paths for evaluated results and metrics.
 def parse_arguments() -> argparse.Namespace:
+    """Parse raw-baseline evaluation paths."""
+
     parser = argparse.ArgumentParser(
         description=(
             "Evaluate the raw QA baseline "
-            "using standard project metrics."
+            "using shared project metrics."
         )
     )
 
     parser.add_argument(
         "--input",
         type=Path,
-        default=DEFAULT_INPUT_PATH
+        default=DEFAULT_INPUT_PATH,
     )
 
     parser.add_argument(
         "--evaluated-output",
         type=Path,
-        default=DEFAULT_EVALUATED_OUTPUT_PATH
+        default=(
+            DEFAULT_EVALUATED_OUTPUT_PATH
+        ),
     )
 
     parser.add_argument(
         "--metrics-output",
         type=Path,
-        default=DEFAULT_METRICS_OUTPUT_PATH
+        default=(
+            DEFAULT_METRICS_OUTPUT_PATH
+        ),
     )
 
     return parser.parse_args()
 
 
-# Starts the baseline evaluation by reading command-line arguments and passing them to run_baseline_evaluation().
 def main() -> None:
+    """Run raw-baseline evaluation from command-line arguments."""
+
     args = parse_arguments()
 
     run_baseline_evaluation(
@@ -264,7 +348,7 @@ def main() -> None:
         ),
         metrics_output_path=(
             args.metrics_output
-        )
+        ),
     )
 
 

@@ -1,47 +1,153 @@
 """
-Evaluates and compares confidence-only vs hybrid selective QA using threshold sweeps, risk–coverage curves, AURC, and matched-coverage analysis.
+Evaluate confidence-only and hybrid prototype ranking for selective QA.
+
+This module compares two earlier project signals:
+
+1. calibrated confidence
+2. hybrid evidence score
+
+It provides two complementary analyses:
+
+- threshold sweeps, which show the operational behavior of fixed score cutoffs;
+- exact score ranking, which produces a full risk-coverage curve and AURC.
+
+The underlying QA correctness definition used by this prototype is relaxed for
+answerable questions:
+
+    Exact Match == 1
+        OR
+    token F1 >= relaxed_f1_threshold
+
+The default relaxed F1 threshold is 0.80.
+
+Important
+---------
+This file belongs to the earlier confidence-vs-hybrid prototype analysis. Its
+relaxed correctness criterion differs from the Exact-Match correctness used by
+the project's final question-aware AURC experiments.
+
+For unanswerable examples, the underlying forced-answer QA candidate is always
+treated as incorrect. Later ANSWER/ABSTAIN routing decisions do not change
+candidate correctness.
+
+AURC uses the same discrete definition as the final ranking evaluator:
+
+    arithmetic mean of risk over every non-empty ranked prefix
+
+Lower AURC is better.
+
+Threshold-grid coverage comparisons are approximate because two score
+distributions can reach slightly different actual coverages at their nearest
+thresholds. The output records the resulting coverage gap explicitly.
 """
+
+from __future__ import annotations
 
 import argparse
 import csv
-import json
-import re
-import string
+import math
 from collections import Counter
-
-# we use Callable when a function itself is passed as an argument, stored in a variable, or returned from another function.
 from collections.abc import Callable
-
-# pairwise() lets you compare each item with the next item
-from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
-from src.utils.io import load_jsonl
+from src.evaluation.metrics import (
+    normalize_answer as shared_normalize_answer,
+)
+from src.evaluation.metrics import (
+    parse_answerability,
+)
+from src.utils.io import (
+    load_jsonl,
+)
+from src.utils.io import (
+    save_json as shared_save_json,
+)
 
-DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_hybrid_evidence.jsonl")
+DEFAULT_INPUT_PATH = Path(
+    "outputs/predictions/calibration_with_hybrid_evidence.jsonl"
+)
 
-DEFAULT_OUTPUT_DIR = Path("outputs/evaluation/risk_coverage")
+DEFAULT_OUTPUT_DIR = Path(
+    "outputs/evaluation/risk_coverage"
+)
 
 DEFAULT_RELAXED_F1_THRESHOLD = 0.80
 
-
-# These define the range of threshold values the program will test. ✅
-# DEFAULT_THRESHOLD_START = 0.00 -> start testing from 0.00
-# DEFAULT_THRESHOLD_END = 1.00 -> stop at 1.00
-# DEFAULT_THRESHOLD_STEP = 0.01 -> increase the threshold by 0.01 each time
 DEFAULT_THRESHOLD_START = 0.00
 DEFAULT_THRESHOLD_END = 1.00
 DEFAULT_THRESHOLD_STEP = 0.01
 
+DEFAULT_TARGET_COVERAGES = (
+    0.10,
+    0.20,
+    0.30,
+    0.32,
+    0.40,
+    0.50,
+    0.54,
+    0.60,
+    0.70,
+    0.80,
+    0.90,
+    1.00,
+)
 
-# Returns the first non-None value found among several possible field names, or returns a default value if none exist.
+DEFAULT_DISPLAY_THRESHOLDS = (
+    0.30,
+    0.40,
+    0.50,
+    0.60,
+    0.70,
+    0.80,
+    0.90,
+    0.95,
+)
+
+
+CALIBRATED_CONFIDENCE_FIELDS = (
+    "calibrated_confidence",
+    "confidence_calibrated",
+    "calibrated_probability",
+)
+
+GENERIC_CONFIDENCE_FIELD = "confidence"
+CONFIDENCE_CALIBRATED_FLAG = "confidence_is_calibrated"
+
+HYBRID_SCORE_FIELDS = (
+    "hybrid_evidence_score",
+    "hybrid_score",
+)
+
+PREDICTION_FIELDS = (
+    "predicted_answer",
+    "prediction_text",
+    "prediction_answer",
+    "answer",
+)
+
+REFERENCE_FIELDS = (
+    "reference_answers",
+    "gold_answers",
+    "answers",
+    "reference_answer",
+    "gold_answer",
+)
+
+ANSWERABILITY_FIELDS = (
+    "is_answerable",
+    "answerable",
+    "gold_is_answerable",
+)
+
+
 def get_first_value(
     prediction: dict[str, Any],
-    # The ... means: there can be more than one str element, with no fixed length.
     field_names: tuple[str, ...],
-    default: Any = None
+    default: Any = None,
 ) -> Any:
+    """Return the first available non-None value from ordered field aliases."""
+
     for field_name in field_names:
         value = prediction.get(field_name)
 
@@ -51,408 +157,720 @@ def get_first_value(
     return default
 
 
-# Gets the first available value from several possible fields and converts it to a float; if conversion fails, it returns the default value.
 def get_first_numeric_value(
     prediction: dict[str, Any],
     field_names: tuple[str, ...],
-    default: float = 0.0
+    default: float | None = None,
 ) -> float:
-    value = get_first_value(
-        prediction=prediction,
-        field_names=field_names,
-        default=default
-    )
+    """
+    Return the first usable finite numeric value from ordered aliases.
 
-    try:
-        return float(value)
+    Present-but-malformed values raise an error instead of silently becoming
+    zero, because silent substitution could alter ranking or threshold results.
+    """
 
-    except (TypeError, ValueError):
+    for field_name in field_names:
+        if field_name not in prediction:
+            continue
+
+        value = prediction[field_name]
+
+        if value is None:
+            continue
+
+        if isinstance(value, bool):
+            raise ValueError(  # noqa: TRY004
+                f"Boolean value is not a valid numeric score in "
+                f"{field_name!r}: {value!r}."
+            )
+
+        try:
+            numeric_value = float(value)
+
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"Invalid numeric value in "
+                f"{field_name!r}: {value!r}."
+            ) from error
+
+        if not math.isfinite(numeric_value):
+            raise ValueError(
+                f"Non-finite numeric value in "
+                f"{field_name!r}: {numeric_value}."
+            )
+
+        return numeric_value
+
+    if default is not None:
         return float(default)
 
+    raise ValueError(
+        "None of the expected numeric fields were found: "
+        f"{list(field_names)}"
+    )
 
 
-# Forces a probability value to stay within the valid range from 0.0 to 1.0.
 def clamp_probability(
-    value: float
+    value: float,
 ) -> float:
+    """
+    Clamp a derived value to [0, 1].
+
+    This helper is retained for compatibility. Experimental input scores are
+    validated rather than silently clamped.
+    """
+
     return max(
         0.0,
         min(
             1.0,
-            float(value)
-        )
+            float(value),
+        ),
     )
 
 
-# Finds the predicted answer from several possible field names and returns it as a clean string.
 def get_predicted_answer(
-    prediction: dict[str, Any]
+    prediction: dict[str, Any],
 ) -> str:
+    """Extract the predicted answer from supported historical field aliases."""
+
     value = get_first_value(
         prediction=prediction,
-        field_names=(
-            "predicted_answer",
-            "prediction_text",
-            "prediction_answer",
-            "answer"
-        ),
-        default=""
+        field_names=PREDICTION_FIELDS,
+        default="",
     )
 
     return str(value).strip()
 
 
-# Finds reference/gold answers from several possible field names and formats them into a clean list of answer strings.
-def get_reference_answers(
-    prediction: dict[str, Any],
+def extract_reference_value(
+    value: Any,
 ) -> list[str]:
-    value = get_first_value(
-        prediction=prediction,
-        field_names=(
-            "reference_answers",
-            "gold_answers",
-            "answers",
-            "reference_answer",
-            "gold_answer"
-        ),
-        default=[]
-    )
-
-    if isinstance(value, dict):
-        text_values = value.get(
-            "text",
-            []
-        )
-
-        if isinstance(text_values, list):
-            return [str(answer).strip() for answer in text_values if answer is not None]
-
-        if text_values is not None:
-            return [str(text_values).strip()]
-
-        return []
-
-    if isinstance(value, list):
-        answers: list[str] = []
-
-        for item in value:
-            if isinstance(item, dict):
-                text_value = item.get(
-                    "text",
-                    ""
-                )
-
-                if isinstance(
-                    text_value,
-                    list
-                ):
-                    answers.extend(
-                        str(answer).strip()
-                        for answer in text_value
-                        if answer is not None
-                    )
-
-                elif text_value is not None:
-                    answers.append(str(text_value).strip())
-
-            elif item is not None:
-                answers.append(str(item).strip())
-
-        return answers
+    """Recursively extract reference-answer strings from common structures."""
 
     if value is None:
         return []
 
-    return [str(value).strip()]
+    if isinstance(value, str):
+        return [value]
+
+    if isinstance(value, dict):
+        for field_name in (
+            "text",
+            "answer",
+            "answers",
+        ):
+            if field_name in value:
+                return extract_reference_value(
+                    value[field_name]
+                )
+
+        return []
+
+    if isinstance(
+        value,
+        (list, tuple, set),
+    ):
+        references: list[str] = []
+
+        for item in value:
+            references.extend(
+                extract_reference_value(
+                    item
+                )
+            )
+
+        return references
+
+    return [
+        str(value)
+    ]
 
 
-# Determines whether a question is answerable by checking explicit answerability fields first, then falling back to whether reference answers exist.
-# explicit_value means a value directly stored in the prediction data, instead of something the code has to infer.
-# Example: "is_answerable": True
-# Here, True is the explicit_value. If this field is missing, the function tries to infer answerability from the reference answers.
+def get_reference_answers(
+    prediction: dict[str, Any],
+) -> list[str]:
+    """Extract all reference answers from the first supported reference field."""
+
+    value = get_first_value(
+        prediction=prediction,
+        field_names=REFERENCE_FIELDS,
+        default=None,
+    )
+
+    if value is None:
+        return []
+
+    return [
+        str(reference).strip()
+        for reference
+        in extract_reference_value(
+            value
+        )
+    ]
+
+
 def get_is_answerable(
     prediction: dict[str, Any],
 ) -> bool:
-    explicit_value = get_first_value(
-        prediction=prediction,
-        field_names=(
-            "is_answerable",
-            "answerable",
-            "gold_is_answerable"
-        ),
-        default=None
+    """
+    Retrieve answerability from explicit metadata when available.
+
+    If explicit answerability is absent, infer it from whether at least one
+    non-empty normalized reference answer exists.
+    """
+
+    for field_name in ANSWERABILITY_FIELDS:
+        if field_name not in prediction:
+            continue
+
+        value = prediction[field_name]
+
+        if value is None:
+            continue
+
+        try:
+            return parse_answerability(
+                value
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ) as error:
+            raise ValueError(
+                f"Invalid answerability value in "
+                f"{field_name!r}: {value!r}."
+            ) from error
+
+    reference_answers = (
+        get_reference_answers(
+            prediction
+        )
     )
 
-    if explicit_value is not None:
-        if isinstance(
-            explicit_value,
-            bool
-        ):
-            return explicit_value
-
-        if isinstance(
-            explicit_value,
-            (int, float)
-        ):
-            return bool(explicit_value)
-
-        normalized_value = str(explicit_value).strip().lower()
-
-        if normalized_value in {
-            "true",
-            "1",
-            "yes",
-            "answerable"
-        }:
-            return True
-
-        if normalized_value in {
-            "false",
-            "0",
-            "no",
-            "unanswerable"
-        }:
-            return False
-
-    reference_answers = get_reference_answers(prediction)
-
-    return any(answer.strip() for answer in reference_answers)
+    return any(
+        normalize_answer(
+            answer
+        )
+        for answer
+        in reference_answers
+    )
 
 
-# Cleans and standardizes answer text by lowercasing it, removing punctuation/articles, and fixing extra spaces for fair answer comparison.
 def normalize_answer(
     text: str,
 ) -> str:
-    normalized_text = str(text).lower()
+    """Normalize answer text using the shared project comparison rule."""
 
-    normalized_text = "".join(
-        character
-        for character in normalized_text
-        if character not in string.punctuation
+    return shared_normalize_answer(
+        str(text)
     )
 
-    normalized_text = re.sub(
-        r"\b(a|an|the)\b",
-        " ",
-        normalized_text
-    )
 
-    normalized_text = " ".join(normalized_text.split())
-
-    return normalized_text
-
-
-
-# Checks whether the predicted answer exactly matches the reference answer after normalizing both texts, returning 1.0 for a match and 0.0 otherwise.
 def exact_match_score(
     predicted_answer: str,
-    reference_answer: str
+    reference_answer: str,
 ) -> float:
+    """Return normalized Exact Match for one prediction/reference pair."""
+
     return float(
-        normalize_answer(predicted_answer) == normalize_answer(reference_answer)
+        normalize_answer(
+            predicted_answer
+        )
+        == normalize_answer(
+            reference_answer
+        )
     )
 
 
-# Measures word-level similarity between the predicted answer and reference answer using precision, recall, and F1 score.
 def token_f1_score(
     predicted_answer: str,
     reference_answer: str,
 ) -> float:
-    predicted_tokens = normalize_answer(predicted_answer).split()
-    reference_tokens = normalize_answer(reference_answer).split()
+    """Calculate token-level F1 for one prediction/reference pair."""
 
-    if not predicted_tokens and not reference_tokens:
+    predicted_tokens = (
+        normalize_answer(
+            predicted_answer
+        ).split()
+    )
+
+    reference_tokens = (
+        normalize_answer(
+            reference_answer
+        ).split()
+    )
+
+    if (
+        not predicted_tokens
+        and not reference_tokens
+    ):
         return 1.0
 
-    if not predicted_tokens or not reference_tokens:
+    if (
+        not predicted_tokens
+        or not reference_tokens
+    ):
         return 0.0
 
-    common_tokens = Counter(predicted_tokens) & Counter(reference_tokens)
+    common_tokens = (
+        Counter(predicted_tokens)
+        & Counter(reference_tokens)
+    )
 
-    overlap_count = sum(common_tokens.values())
+    overlap_count = sum(
+        common_tokens.values()
+    )
 
     if overlap_count == 0:
         return 0.0
 
-    precision = overlap_count / len(predicted_tokens)
-    recall = overlap_count / len(reference_tokens)
+    precision = (
+        overlap_count
+        / len(predicted_tokens)
+    )
 
-    f1_score = 2.0 * precision * recall / (precision + recall)
+    recall = (
+        overlap_count
+        / len(reference_tokens)
+    )
 
-    return f1_score
+    return (
+        2.0
+        * precision
+        * recall
+        / (precision + recall)
+    )
 
 
+def get_clean_raw_answer(
+    value: Any,
+) -> str:
+    """
+    Normalize whitespace only, without removing punctuation.
 
-# Calculates the best Exact Match and token-level F1 scores by comparing the predicted answer with all available reference answers.
+    This is used when deciding whether a raw unanswerable prediction is
+    genuinely empty.
+    """
+
+    if value is None:
+        return ""
+
+    return " ".join(
+        str(value).split()
+    )
+
+
 def calculate_answer_scores(
     predicted_answer: str,
-    reference_answers: list[str]
+    reference_answers: list[str],
 ) -> tuple[float, float]:
+    """
+    Calculate best Exact Match and token F1 across available references.
+
+    For records without references, the historical prototype diagnostic assigns
+    1.0 to an actually empty prediction and 0.0 otherwise.
+    """
+
     if not reference_answers:
-        is_empty_prediction = float(normalize_answer(predicted_answer) == "")
-
         return (
-            is_empty_prediction,
-            is_empty_prediction
+            0.0,
+            0.0,
         )
-
 
     exact_match = max(
         exact_match_score(
             predicted_answer,
-            reference_answer
+            reference_answer,
         )
-        for reference_answer in reference_answers
+        for reference_answer
+        in reference_answers
     )
 
     token_f1 = max(
         token_f1_score(
             predicted_answer,
-            reference_answer
+            reference_answer,
         )
-        for reference_answer in reference_answers
+        for reference_answer
+        in reference_answers
     )
 
     return (
         exact_match,
-        token_f1
+        token_f1,
     )
 
 
-
-# Determines whether a prediction is correct, while also returning its Exact Match and token-level F1 scores.
 def is_prediction_correct(
     prediction: dict[str, Any],
-    relaxed_f1_threshold: float
+    relaxed_f1_threshold: float,
 ) -> tuple[
     bool,
     float,
-    float
+    float,
 ]:
-    predicted_answer = get_predicted_answer(prediction)
-    reference_answers = get_reference_answers(prediction)
+    """
+    Determine underlying QA correctness for the prototype analysis.
 
-    is_answerable = get_is_answerable(prediction)
+    Answerable questions are correct when Exact Match is 1.0 or token F1 meets
+    the relaxed threshold.
 
-    exact_match, token_f1 = calculate_answer_scores(
-        predicted_answer=(predicted_answer),
-        reference_answers=(reference_answers)
+    For unanswerable examples, the underlying forced-answer QA candidate is always
+    incorrect, regardless of later routing decisions.
+    """
+
+    if not (
+        0.0
+        <= relaxed_f1_threshold
+        <= 1.0
+    ):
+        raise ValueError(
+            "relaxed_f1_threshold must be "
+            "between 0 and 1."
+        )
+
+    predicted_answer = (
+        get_predicted_answer(
+            prediction
+        )
+    )
+
+    reference_answers = (
+        get_reference_answers(
+            prediction
+        )
+    )
+
+    is_answerable = (
+        get_is_answerable(
+            prediction
+        )
+    )
+
+    usable_references = [
+        reference
+        for reference
+        in reference_answers
+        if normalize_answer(
+            reference
+        )
+    ]
+
+    if (
+        is_answerable
+        and not usable_references
+    ):
+        raise ValueError(
+            "Answerable prediction does not contain "
+            "a usable reference answer. "
+            f"Prediction id: "
+            f"{prediction.get('id')!r}"
+        )
+
+    if (
+        not is_answerable
+        and usable_references
+    ):
+        raise ValueError(
+            "Unanswerable prediction contains "
+            "non-empty reference answers. "
+            f"Prediction id: "
+            f"{prediction.get('id')!r}"
+        )
+
+    (
+        exact_match,
+        token_f1,
+    ) = calculate_answer_scores(
+        predicted_answer=(
+            predicted_answer
+        ),
+        reference_answers=(
+            reference_answers
+        ),
     )
 
     if not is_answerable:
-        is_correct = normalize_answer(predicted_answer) == ""
-
         return (
-            is_correct,
-            exact_match,
-            token_f1
+            False,
+            0.0,
+            0.0,
         )
 
-    is_correct = exact_match == 1.0 or token_f1 >= relaxed_f1_threshold
+    is_correct = (
+        exact_match == 1.0
+        or token_f1
+        >= relaxed_f1_threshold
+    )
 
     return (
         is_correct,
         exact_match,
-        token_f1
+        token_f1,
     )
 
 
+def validate_probability_score(
+    score: float,
+    score_name: str,
+) -> float:
+    """Require a finite probability-like score in [0, 1]."""
 
-# Gets the best available calibrated/confidence score from several possible fields and keeps it within the valid 0.0–1.0 range.
+    if not math.isfinite(
+        score
+    ):
+        raise ValueError(
+            f"{score_name} must be finite."
+        )
+
+    if not (
+        0.0
+        <= score
+        <= 1.0
+    ):
+        raise ValueError(
+            f"{score_name} must be "
+            "between 0 and 1, "
+            f"received {score}."
+        )
+
+    return score
+
+
 def get_calibrated_confidence(
-    prediction: dict[str, Any]
+    prediction: dict[str, Any],
 ) -> float:
-    confidence = get_first_numeric_value(
-        prediction=prediction,
-        field_names=(
-            "calibrated_confidence",
-            "confidence_calibrated",
-            "calibrated_probability",
-            "confidence",
-            "raw_confidence"
-        ),
-        default=0.0
+    """
+    Retrieve the calibrated confidence used by the prototype comparison.
+
+    Explicit calibrated-confidence fields are preferred. The generic
+    `confidence` field is accepted only when the record explicitly marks it as
+    calibrated. Raw confidence is intentionally not used as a fallback.
+    """
+
+    for field_name in (
+        CALIBRATED_CONFIDENCE_FIELDS
+    ):
+        if (
+            field_name
+            in prediction
+            and prediction[
+                field_name
+            ]
+            is not None
+        ):
+            score = (
+                get_first_numeric_value(
+                    prediction,
+                    (field_name,),
+                )
+            )
+
+            return (
+                validate_probability_score(
+                    score,
+                    "Calibrated confidence",
+                )
+            )
+
+    if (
+        prediction.get(
+            CONFIDENCE_CALIBRATED_FLAG
+        )
+        is True
+        and prediction.get(
+            GENERIC_CONFIDENCE_FIELD
+        )
+        is not None
+    ):
+        score = (
+            get_first_numeric_value(
+                prediction,
+                (
+                    GENERIC_CONFIDENCE_FIELD,
+                ),
+            )
+        )
+
+        return (
+            validate_probability_score(
+                score,
+                "Calibrated confidence",
+            )
+        )
+
+    raise ValueError(
+        "Prediction does not contain usable "
+        "calibrated confidence."
     )
 
-    return clamp_probability(confidence)
 
-
-
-# Gets the hybrid evidence score from the prediction and ensures it stays within the valid 0.0–1.0 range.
 def get_hybrid_score(
-    prediction: dict[str, Any]
+    prediction: dict[str, Any],
 ) -> float:
-    hybrid_score = get_first_numeric_value(
-        prediction=prediction,
-        field_names=(
-            "hybrid_evidence_score",
-            "hybrid_score"
-        ),
-        default=0.0
+    """Retrieve the hybrid evidence score as a validated [0, 1] value."""
+
+    score = (
+        get_first_numeric_value(
+            prediction=prediction,
+            field_names=(
+                HYBRID_SCORE_FIELDS
+            ),
+        )
     )
 
-    return clamp_probability(hybrid_score)
+    return (
+        validate_probability_score(
+            score,
+            "Hybrid evidence score",
+        )
+    )
 
 
-
-# Validates that the prediction list is not empty and that every prediction contains both a confidence field and a hybrid-score field.
 def validate_predictions(
-    predictions: list[dict[str, Any]]
+    predictions: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
 ) -> None:
+    """
+    Validate score, answerability, and reference information for every record.
+
+    Missing or malformed scores fail early rather than silently becoming zero.
+    """
+
     if not predictions:
-        raise ValueError("Prediction list cannot be empty.")
-
-    confidence_fields = (
-        "calibrated_confidence",
-        "confidence_calibrated",
-        "calibrated_probability",
-        "confidence",
-        "raw_confidence"
-    )
-
-    hybrid_fields = (
-        "hybrid_evidence_score",
-        "hybrid_score"
-    )
+        raise ValueError(
+            "Prediction list cannot be empty."
+        )
 
     for index, prediction in enumerate(
         predictions,
-        start=1
+        start=1,
     ):
-        if not any(field_name in prediction for field_name in confidence_fields):
-            raise ValueError(f"Prediction {index} does not contain a confidence field.")
-
-        if not any(field_name in prediction for field_name in hybrid_fields):
-            raise ValueError(
-                f"Prediction {index} does not contain a hybrid score field."
+        try:
+            get_calibrated_confidence(
+                prediction
             )
 
+            get_hybrid_score(
+                prediction
+            )
+
+            is_answerable = (
+                get_is_answerable(
+                    prediction
+                )
+            )
+
+            references = (
+                get_reference_answers(
+                    prediction
+                )
+            )
+
+            usable_references = [
+                reference
+                for reference
+                in references
+                if normalize_answer(
+                    reference
+                )
+            ]
+
+            if (
+                is_answerable
+                and not usable_references
+            ):
+                raise ValueError(
+                    "Answerable record has no "
+                    "usable reference answer."
+                )
+
+            if (
+                not is_answerable
+                and usable_references
+            ):
+                raise ValueError(
+                    "Unanswerable record contains "
+                    "non-empty reference answers."
+                )
+
+        except (
+            ValueError,
+            TypeError,
+        ) as error:
+            raise ValueError(
+                f"Prediction {index} "
+                f"failed validation: {error}"
+            ) from error
 
 
-# Generates a list of threshold values from start to end using a fixed step, while validating that the range is valid.
 def generate_thresholds(
     start: float,
     end: float,
-    step: float
+    step: float,
 ) -> list[float]:
+    """Generate an inclusive deterministic threshold grid."""
+
+    for name, value in (
+        (
+            "threshold start",
+            start,
+        ),
+        (
+            "threshold end",
+            end,
+        ),
+        (
+            "threshold step",
+            step,
+        ),
+    ):
+        if not math.isfinite(
+            float(value)
+        ):
+            raise ValueError(
+                f"{name} must be finite."
+            )
+
     if step <= 0.0:
-        raise ValueError("Threshold step must be positive.")
+        raise ValueError(
+            "Threshold step must be positive."
+        )
 
     if start > end:
-        raise ValueError("Threshold start must not exceed end.")
+        raise ValueError(
+            "Threshold start must not exceed end."
+        )
 
-    if start < 0.0 or end > 1.0:
-        raise ValueError("Threshold range must be inside [0, 1].")
+    if (
+        start < 0.0
+        or end > 1.0
+    ):
+        raise ValueError(
+            "Threshold range must be "
+            "inside [0, 1]."
+        )
 
-    thresholds: list[float] = []
+    thresholds: list[
+        float
+    ] = []
 
     current_value = start
 
-    while current_value <= (end + 1e-12):
+    while (
+        current_value
+        <= end + 1e-12
+    ):
         thresholds.append(
             round(
                 current_value,
-                10
+                10,
             )
         )
 
@@ -461,314 +879,703 @@ def generate_thresholds(
     return thresholds
 
 
-# Evaluates system performance at one threshold by deciding which predictions to answer or abstain on, then calculating coverage, selective accuracy, and selective risk.
 def evaluate_at_threshold(
-    predictions: list[dict[str, Any]],
+    predictions: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
     correctness: list[bool],
     score_function: Callable[
         [dict[str, Any]],
-        float
+        float,
     ],
-    threshold: float
+    threshold: float,
 ) -> dict[str, Any]:
-    if len(predictions) != len(correctness):
-        raise ValueError("Prediction and correctness counts must match.")
+    """
+    Evaluate a score-based ANSWER/ABSTAIN policy at one threshold.
+
+    When zero examples are answered, selective accuracy/risk use the historical
+    plotting convention 1.0/0.0. Such zero-coverage points are not used in AURC.
+    """
+
+    if not predictions:
+        raise ValueError(
+            "Prediction list cannot be empty."
+        )
+
+    if (
+        len(predictions)
+        != len(correctness)
+    ):
+        raise ValueError(
+            "Prediction and correctness "
+            "counts must match."
+        )
+
+    if (
+        not math.isfinite(
+            threshold
+        )
+        or not (
+            0.0
+            <= threshold
+            <= 1.0
+        )
+    ):
+        raise ValueError(
+            "Threshold must be finite "
+            "and between 0 and 1."
+        )
 
     answered_indices = [
         index
-        for index, prediction in enumerate(predictions)
-        if score_function(prediction) >= threshold
+        for index, prediction
+        in enumerate(
+            predictions
+        )
+        if score_function(
+            prediction
+        )
+        >= threshold
     ]
 
-    answered_count = len(answered_indices)
-    total_count = len(predictions)
-    abstained_count = total_count - answered_count
+    answered_count = len(
+        answered_indices
+    )
 
-    correct_answered = sum(1 for index in answered_indices if correctness[index])
-    wrong_answered = answered_count - correct_answered
+    total_count = len(
+        predictions
+    )
 
-    coverage = answered_count / total_count if total_count else 0.0
-    selective_accuracy = correct_answered / answered_count if answered_count else 1.0
-    selective_risk = wrong_answered / answered_count if answered_count else 0.0
+    abstained_count = (
+        total_count
+        - answered_count
+    )
+
+    correct_answered = sum(
+        1
+        for index
+        in answered_indices
+        if correctness[
+            index
+        ]
+    )
+
+    wrong_answered = (
+        answered_count
+        - correct_answered
+    )
+
+    coverage = (
+        answered_count
+        / total_count
+    )
+
+    if answered_count:
+        selective_accuracy = (
+            correct_answered
+            / answered_count
+        )
+
+        selective_risk = (
+            wrong_answered
+            / answered_count
+        )
+
+    else:
+        selective_accuracy = 1.0
+        selective_risk = 0.0
 
     return {
         "threshold": threshold,
         "total": total_count,
-        "answered": answered_count,
-        "abstained": abstained_count,
+        "answered": (
+            answered_count
+        ),
+        "abstained": (
+            abstained_count
+        ),
         "coverage": coverage,
-        "selective_accuracy": (selective_accuracy),
-        "selective_risk": (selective_risk),
-        "correct_answered": (correct_answered),
-        "wrong_answered": (wrong_answered)
+        "selective_accuracy": (
+            selective_accuracy
+        ),
+        "selective_risk": (
+            selective_risk
+        ),
+        "correct_answered": (
+            correct_answered
+        ),
+        "wrong_answered": (
+            wrong_answered
+        ),
     }
 
 
-# Tests multiple threshold values by repeatedly evaluating the system at each threshold and collecting the resulting metrics.
 def sweep_thresholds(
-    predictions: list[dict[str, Any]],
+    predictions: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
     correctness: list[bool],
     score_function: Callable[
         [dict[str, Any]],
-        float
+        float,
     ],
-    thresholds: list[float]
-) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
+    thresholds: list[float],
+) -> list[
+    dict[
+        str,
+        Any,
+    ]
+]:
+    """Evaluate one score function across a deterministic threshold grid."""
 
-    for threshold in thresholds:
-        metrics = evaluate_at_threshold(
+    if not thresholds:
+        raise ValueError(
+            "Threshold list cannot be empty."
+        )
+
+    return [
+        evaluate_at_threshold(
             predictions=predictions,
             correctness=correctness,
-            score_function=(score_function),
-            threshold=threshold
+            score_function=(
+                score_function
+            ),
+            threshold=threshold,
         )
+        for threshold
+        in thresholds
+    ]
 
-        results.append(metrics)
 
-    return results
-
-
-# Builds an exact risk–coverage curve by ranking predictions from highest to lowest score and measuring accuracy/risk as more predictions are answered.
 def build_exact_risk_coverage_curve(
-    predictions: list[dict[str, Any]],
+    predictions: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
     correctness: list[bool],
     score_function: Callable[
         [dict[str, Any]],
-        float
+        float,
+    ],
+) -> list[
+    dict[
+        str,
+        Any,
     ]
-) -> list[dict[str, Any]]:
-    scored_examples = [
-        {
-            "score": score_function(prediction),
-            "correct": is_correct
-        }
-        for prediction, is_correct in zip(
-            predictions,
-            correctness
+]:
+    """
+    Build the exact prefix-based risk-coverage curve.
+
+    Records are ranked by score descending. Score ties are broken by original
+    input index, matching the deterministic tie rule used by the final ablation
+    evaluator.
+
+    A zero-coverage origin is included for plotting, but excluded from AURC.
+    """
+
+    if not predictions:
+        raise ValueError(
+            "Prediction list cannot be empty."
         )
-    ]
+
+    if (
+        len(predictions)
+        != len(correctness)
+    ):
+        raise ValueError(
+            "Prediction and correctness "
+            "counts must match."
+        )
+
+    scored_examples: list[
+        dict[
+            str,
+            Any,
+        ]
+    ] = []
+
+    for index, (
+        prediction,
+        is_correct,
+    ) in enumerate(
+        zip(
+            predictions,
+            correctness,
+        )
+    ):
+        score = (
+            score_function(
+                prediction
+            )
+        )
+
+        validate_probability_score(
+            score,
+            "Ranking score",
+        )
+
+        scored_examples.append(
+            {
+                "index": index,
+                "score": score,
+                "correct": bool(
+                    is_correct
+                ),
+            }
+        )
 
     scored_examples.sort(
-        key=lambda item: item["score"],
-        reverse=True
+        key=lambda item: (
+            -float(
+                item[
+                    "score"
+                ]
+            ),
+            int(
+                item[
+                    "index"
+                ]
+            ),
+        )
     )
 
-    total_count = len(scored_examples)
+    total_count = len(
+        scored_examples
+    )
 
-    curve: list[dict[str, Any]] = [
+    curve: list[
+        dict[
+            str,
+            Any,
+        ]
+    ] = [
         {
             "answered": 0,
             "coverage": 0.0,
             "selective_accuracy": 1.0,
             "selective_risk": 0.0,
-            "minimum_score": 1.0
+            "minimum_score": None,
         }
     ]
 
     correct_answered = 0
-    wrong_answered = 0
 
-    for index, example in enumerate(
+    for rank, example in enumerate(
         scored_examples,
-        start=1
+        start=1,
     ):
-        if example["correct"]:
-            correct_answered += 1
+        correct_answered += int(
+            example[
+                "correct"
+            ]
+        )
 
-        else:
-            wrong_answered += 1
-
-        selective_accuracy = correct_answered / index
-        selective_risk = wrong_answered / index
-        coverage = index / total_count
+        wrong_answered = (
+            rank
+            - correct_answered
+        )
 
         curve.append(
             {
-                "answered": index,
-                "coverage": coverage,
-                "selective_accuracy": (selective_accuracy),
-                "selective_risk": (selective_risk),
-                "minimum_score": (example["score"])
+                "answered": rank,
+                "coverage": (
+                    rank
+                    / total_count
+                ),
+                "selective_accuracy": (
+                    correct_answered
+                    / rank
+                ),
+                "selective_risk": (
+                    wrong_answered
+                    / rank
+                ),
+                "minimum_score": (
+                    example[
+                        "score"
+                    ]
+                ),
             }
         )
 
     return curve
 
 
-
-# Calculates the Area Under the Risk-Coverage Curve (AURC), summarizing overall selective risk across different coverage levels.
 def calculate_aurc(
-    curve: list[dict[str, Any]]
+    curve: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
 ) -> float:
-    if len(curve) < 2:
-        return 0.0
+    """
+    Calculate discrete AURC as mean risk over all non-empty ranked prefixes.
 
-    sorted_curve = sorted(
-        curve,
-        key=lambda point: point["coverage"]
+    This matches the canonical AURC definition used by
+    `evaluate_question_aware_ablation.py`.
+    """
+
+    non_empty_points = [
+        point
+        for point
+        in curve
+        if int(
+            point.get(
+                "answered",
+                0,
+            )
+        )
+        > 0
+    ]
+
+    if not non_empty_points:
+        raise ValueError(
+            "Cannot calculate AURC without "
+            "non-empty ranked prefixes."
+        )
+
+    return (
+        sum(
+            float(
+                point[
+                    "selective_risk"
+                ]
+            )
+            for point
+            in non_empty_points
+        )
+        / len(
+            non_empty_points
+        )
     )
 
-    area = 0.0
 
-    # pairwise(sorted_curve) takes two neighboring points at a time:
-    # then calculates the width between those two coverage points on the risk–coverage graph. This width is later used to calculate the small area between them for AURC.
-    for left_point, right_point in pairwise(sorted_curve):
-        coverage_difference = right_point["coverage"] - left_point["coverage"]
-
-        average_risk = (
-            left_point["selective_risk"] + right_point["selective_risk"]
-        ) / 2.0
-
-        area += coverage_difference * average_risk
-
-    return area
-
-
-# Finds the result whose coverage is closest to the target coverage, using lower selective risk as a tie-breaker.
 def find_closest_coverage_result(
-    results: list[dict[str, Any]],
-    target_coverage: float
+    results: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
+    target_coverage: float,
 ) -> dict[str, Any]:
+    """
+    Select the threshold result closest to a requested positive coverage.
+
+    Zero-answer rows are ignored when a positive-coverage result exists.
+    Equal-distance ties prefer higher actual coverage before lower risk.
+    """
+
     if not results:
-        raise ValueError("Results cannot be empty.")
+        raise ValueError(
+            "Results cannot be empty."
+        )
+
+    if (
+        not math.isfinite(
+            target_coverage
+        )
+        or not (
+            0.0
+            < target_coverage
+            <= 1.0
+        )
+    ):
+        raise ValueError(
+            "target_coverage must be finite "
+            "and lie in (0, 1]."
+        )
+
+    positive_results = [
+        result
+        for result
+        in results
+        if float(
+            result[
+                "coverage"
+            ]
+        )
+        > 0.0
+    ]
+
+    candidates = (
+        positive_results
+        if positive_results
+        else results
+    )
 
     return min(
-        results,
+        candidates,
         key=lambda result: (
-            abs(result["coverage"] - target_coverage),
-            result["selective_risk"]
-        )
+            abs(
+                float(
+                    result[
+                        "coverage"
+                    ]
+                )
+                - target_coverage
+            ),
+            -float(
+                result[
+                    "coverage"
+                ]
+            ),
+            float(
+                result[
+                    "selective_risk"
+                ]
+            ),
+        ),
     )
 
 
-# Compares confidence-only and hybrid methods at the same target coverage levels and records their accuracy, risk, thresholds, and risk difference.
 def compare_at_target_coverages(
-    confidence_results: list[dict[str, Any]],
-    hybrid_results: list[dict[str, Any]],
-    target_coverages: list[float]
-) -> list[dict[str, Any]]:
-    comparisons: list[dict[str, Any]] = []
+    confidence_results: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
+    hybrid_results: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
+    target_coverages: list[float],
+) -> list[
+    dict[
+        str,
+        Any,
+    ]
+]:
+    """
+    Compare threshold sweeps near requested coverage levels.
 
-    for target_coverage in target_coverages:
-        confidence_result = find_closest_coverage_result(
-            results=confidence_results,
-            target_coverage=(target_coverage)
+    This is an approximate threshold-grid comparison, not the exact prefix-based
+    matched-coverage analysis used by the final ablation evaluator.
+
+    `coverage_gap` exposes the actual coverage mismatch between the two selected
+    threshold rows.
+    """
+
+    comparisons: list[
+        dict[
+            str,
+            Any,
+        ]
+    ] = []
+
+    for target_coverage in (
+        target_coverages
+    ):
+        confidence_result = (
+            find_closest_coverage_result(
+                results=(
+                    confidence_results
+                ),
+                target_coverage=(
+                    target_coverage
+                ),
+            )
         )
 
-        hybrid_result = find_closest_coverage_result(
-            results=hybrid_results,
-            target_coverage=(target_coverage)
+        hybrid_result = (
+            find_closest_coverage_result(
+                results=(
+                    hybrid_results
+                ),
+                target_coverage=(
+                    target_coverage
+                ),
+            )
+        )
+
+        confidence_coverage = float(
+            confidence_result[
+                "coverage"
+            ]
+        )
+
+        hybrid_coverage = float(
+            hybrid_result[
+                "coverage"
+            ]
         )
 
         comparisons.append(
             {
-                "target_coverage": (target_coverage),
-                "confidence_threshold": (confidence_result["threshold"]),
-                "confidence_coverage": (confidence_result["coverage"]),
-                "confidence_accuracy": (confidence_result["selective_accuracy"]),
-                "confidence_risk": (confidence_result["selective_risk"]),
-                "confidence_answered": (confidence_result["answered"]),
-                "hybrid_threshold": (hybrid_result["threshold"]),
-                "hybrid_coverage": (hybrid_result["coverage"]),
-                "hybrid_accuracy": (hybrid_result["selective_accuracy"]),
-                "hybrid_risk": (hybrid_result["selective_risk"]),
-                "hybrid_answered": (hybrid_result["answered"]),
+                "target_coverage": (
+                    target_coverage
+                ),
+                "confidence_threshold": (
+                    confidence_result[
+                        "threshold"
+                    ]
+                ),
+                "confidence_coverage": (
+                    confidence_coverage
+                ),
+                "confidence_accuracy": (
+                    confidence_result[
+                        "selective_accuracy"
+                    ]
+                ),
+                "confidence_risk": (
+                    confidence_result[
+                        "selective_risk"
+                    ]
+                ),
+                "confidence_answered": (
+                    confidence_result[
+                        "answered"
+                    ]
+                ),
+                "hybrid_threshold": (
+                    hybrid_result[
+                        "threshold"
+                    ]
+                ),
+                "hybrid_coverage": (
+                    hybrid_coverage
+                ),
+                "hybrid_accuracy": (
+                    hybrid_result[
+                        "selective_accuracy"
+                    ]
+                ),
+                "hybrid_risk": (
+                    hybrid_result[
+                        "selective_risk"
+                    ]
+                ),
+                "hybrid_answered": (
+                    hybrid_result[
+                        "answered"
+                    ]
+                ),
+                "coverage_gap": (
+                    hybrid_coverage
+                    - confidence_coverage
+                ),
                 "risk_difference": (
-                    hybrid_result["selective_risk"]
-                    - confidence_result["selective_risk"]
-                )
+                    float(
+                        hybrid_result[
+                            "selective_risk"
+                        ]
+                    )
+                    - float(
+                        confidence_result[
+                            "selective_risk"
+                        ]
+                    )
+                ),
             }
         )
 
     return comparisons
 
 
-
-# Saves a list of result dictionaries into a CSV file, creating the output folder and column headers automatically.
 def save_csv(
-    rows: list[dict[str, Any]],
-    output_path: str | Path
+    rows: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
+    output_path: str | Path,
 ) -> None:
+    """Save result rows as UTF-8 CSV with deterministic Unix line endings."""
 
-    output_path = Path(output_path)
+    output_path = Path(
+        output_path
+    )
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
     if not rows:
         output_path.write_text(
             "",
-            encoding="utf-8"
+            encoding="utf-8",
         )
 
         return
 
-    field_names = list(rows[0].keys())
-
-    with output_path.open(
-        "w",
-        encoding="utf-8",
-        newline=""
-    ) as output_file:
-        writer = csv.DictWriter(
-            output_file,
-            fieldnames=field_names
-        )
-
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-
-# Saves any Python data structure as a readable formatted JSON file and creates the output folder if needed.
-def save_json(
-    data: Any,
-    output_path: str | Path
-) -> None:
-    output_path = Path(output_path)
-
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True
+    field_names = list(
+        rows[
+            0
+        ].keys()
     )
 
     with output_path.open(
         "w",
-        encoding="utf-8"
+        encoding="utf-8",
+        newline="",
     ) as output_file:
-        json.dump(
-            data,
+        writer = csv.DictWriter(
             output_file,
-            indent=2,
-            ensure_ascii=False
+            fieldnames=(
+                field_names
+            ),
+            lineterminator="\n",
+        )
+
+        writer.writeheader()
+
+        writer.writerows(
+            rows
         )
 
 
+def save_json(
+    data: Any,
+    output_path: str | Path,
+) -> None:
+    """Save formatted JSON through the repository's shared I/O helper."""
 
-# Prints a clean table showing performance at selected thresholds, including coverage, accuracy, risk, answered count, and wrong-answer count.
+    shared_save_json(
+        data,
+        output_path,
+    )
+
+
 def print_threshold_summary(
     system_name: str,
-    results: list[dict[str, Any]],
-    selected_thresholds: list[float]
+    results: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
+    selected_thresholds: list[float],
 ) -> None:
-    print("\n" + "=" * 78)
+    """Print representative rows from a threshold sweep."""
 
-    print(system_name)
+    print(
+        "\n"
+        + "=" * 78
+    )
 
-    print("=" * 78)
+    print(
+        system_name
+    )
 
-    # Without alignment:
-    # Output:
-    # Risk
-    # Accuracy
+    print(
+        "=" * 78
+    )
 
-    # With >10:
-    # Output:
-    #     Risk
-    # Accuracy
     print(
         f"{'Threshold':>10}"
         f"{'Coverage':>12}"
@@ -778,12 +1585,23 @@ def print_threshold_summary(
         f"{'Wrong':>10}"
     )
 
-    print("-" * 78)
+    print(
+        "-" * 78
+    )
 
-    for selected_threshold in selected_thresholds:
+    for selected_threshold in (
+        selected_thresholds
+    ):
         closest_result = min(
             results,
-            key=lambda result: abs(result["threshold"] - selected_threshold)
+            key=lambda result: abs(
+                float(
+                    result[
+                        "threshold"
+                    ]
+                )
+                - selected_threshold
+            ),
         )
 
         print(
@@ -796,15 +1614,33 @@ def print_threshold_summary(
         )
 
 
-# Prints a side-by-side table comparing confidence-only and hybrid methods at matched coverage levels, including their risks, thresholds, and risk difference.
 def print_matched_coverage_table(
-    comparisons: list[dict[str, Any]],
+    comparisons: list[
+        dict[
+            str,
+            Any,
+        ]
+    ],
 ) -> None:
-    print("\n" + "=" * 112)
+    """
+    Print approximate threshold-grid coverage comparisons.
 
-    print("MATCHED-COVERAGE COMPARISON")
+    The coverage-gap column makes mismatched actual coverage explicit.
+    """
 
-    print("=" * 112)
+    print(
+        "\n"
+        + "=" * 124
+    )
+
+    print(
+        "APPROXIMATE THRESHOLD-GRID "
+        "COVERAGE COMPARISON"
+    )
+
+    print(
+        "=" * 124
+    )
 
     print(
         f"{'Target':>8}"
@@ -814,10 +1650,13 @@ def print_matched_coverage_table(
         f"{'Hybrid cov':>12}"
         f"{'Hybrid risk':>13}"
         f"{'Hybrid thr':>12}"
+        f"{'Cov gap':>10}"
         f"{'Risk Δ':>10}"
     )
 
-    print("-" * 112)
+    print(
+        "-" * 124
+    )
 
     for comparison in comparisons:
         print(
@@ -828,291 +1667,630 @@ def print_matched_coverage_table(
             f"{comparison['hybrid_coverage']:>12.4f}"
             f"{comparison['hybrid_risk']:>13.4f}"
             f"{comparison['hybrid_threshold']:>12.2f}"
+            f"{comparison['coverage_gap']:>10.4f}"
             f"{comparison['risk_difference']:>10.4f}"
         )
 
 
-# Runs the complete risk–coverage evaluation by comparing confidence-only and hybrid scoring across many thresholds, calculating AURC, comparing them at matched coverage levels, and saving all results.
+def validate_runtime_settings(
+    relaxed_f1_threshold: float,
+    threshold_start: float,
+    threshold_end: float,
+    threshold_step: float,
+) -> None:
+    """Validate prototype evaluation thresholds before processing data."""
+
+    if (
+        not math.isfinite(
+            relaxed_f1_threshold
+        )
+        or not (
+            0.0
+            <= relaxed_f1_threshold
+            <= 1.0
+        )
+    ):
+        raise ValueError(
+            "relaxed_f1_threshold must be "
+            "finite and between 0 and 1."
+        )
+
+    generate_thresholds(
+        start=(
+            threshold_start
+        ),
+        end=(
+            threshold_end
+        ),
+        step=(
+            threshold_step
+        ),
+    )
+
+
 def run_risk_coverage_evaluation(
     input_path: str | Path,
     output_dir: str | Path,
     relaxed_f1_threshold: float,
     threshold_start: float,
     threshold_end: float,
-    threshold_step: float
+    threshold_step: float,
 ) -> dict[str, Any]:
-    predictions = load_jsonl(input_path)
+    """
+    Run the complete confidence-vs-hybrid prototype evaluation.
 
-    validate_predictions(predictions)
+    Threshold sweeps are saved for operational diagnostics. AURC is calculated
+    from exact score-ranked prefixes rather than from the coarse threshold grid.
+    """
 
-    if not (0.0 <= relaxed_f1_threshold <= 1.0):
-        raise ValueError("relaxed_f1_threshold must be between 0 and 1.")
+    validate_runtime_settings(
+        relaxed_f1_threshold=(
+            relaxed_f1_threshold
+        ),
+        threshold_start=(
+            threshold_start
+        ),
+        threshold_end=(
+            threshold_end
+        ),
+        threshold_step=(
+            threshold_step
+        ),
+    )
 
-    correctness: list[bool] = []
+    predictions = (
+        load_jsonl(
+            input_path
+        )
+    )
 
-    exact_match_scores: list[float] = []
+    validate_predictions(
+        predictions
+    )
 
-    token_f1_scores: list[float] = []
+    correctness: list[
+        bool
+    ] = []
+
+    exact_match_scores: list[
+        float
+    ] = []
+
+    token_f1_scores: list[
+        float
+    ] = []
 
     for prediction in predictions:
         (
             is_correct,
             exact_match,
-            token_f1
+            token_f1,
         ) = is_prediction_correct(
-            prediction=prediction,
-            relaxed_f1_threshold=(relaxed_f1_threshold)
+            prediction=(
+                prediction
+            ),
+            relaxed_f1_threshold=(
+                relaxed_f1_threshold
+            ),
         )
 
-        correctness.append(is_correct)
-        exact_match_scores.append(exact_match)
-        token_f1_scores.append(token_f1)
+        correctness.append(
+            is_correct
+        )
 
-    thresholds = generate_thresholds(
-        start=threshold_start,
-        end=threshold_end,
-        step=threshold_step
+        exact_match_scores.append(
+            exact_match
+        )
+
+        token_f1_scores.append(
+            token_f1
+        )
+
+    thresholds = (
+        generate_thresholds(
+            start=(
+                threshold_start
+            ),
+            end=(
+                threshold_end
+            ),
+            step=(
+                threshold_step
+            ),
+        )
     )
 
-    confidence_results = sweep_thresholds(
-        predictions=predictions,
-        correctness=correctness,
-        score_function=(get_calibrated_confidence),
-        thresholds=thresholds
+    confidence_results = (
+        sweep_thresholds(
+            predictions=(
+                predictions
+            ),
+            correctness=(
+                correctness
+            ),
+            score_function=(
+                get_calibrated_confidence
+            ),
+            thresholds=(
+                thresholds
+            ),
+        )
     )
 
-    hybrid_results = sweep_thresholds(
-        predictions=predictions,
-        correctness=correctness,
-        score_function=(get_hybrid_score),
-        thresholds=thresholds
+    hybrid_results = (
+        sweep_thresholds(
+            predictions=(
+                predictions
+            ),
+            correctness=(
+                correctness
+            ),
+            score_function=(
+                get_hybrid_score
+            ),
+            thresholds=(
+                thresholds
+            ),
+        )
     )
 
-    confidence_curve = build_exact_risk_coverage_curve(
-        predictions=predictions,
-        correctness=correctness,
-        score_function=(get_calibrated_confidence)
+    confidence_curve = (
+        build_exact_risk_coverage_curve(
+            predictions=(
+                predictions
+            ),
+            correctness=(
+                correctness
+            ),
+            score_function=(
+                get_calibrated_confidence
+            ),
+        )
     )
 
-    hybrid_curve = build_exact_risk_coverage_curve(
-        predictions=predictions,
-        correctness=correctness,
-        score_function=(get_hybrid_score)
+    hybrid_curve = (
+        build_exact_risk_coverage_curve(
+            predictions=(
+                predictions
+            ),
+            correctness=(
+                correctness
+            ),
+            score_function=(
+                get_hybrid_score
+            ),
+        )
     )
 
-    confidence_aurc = calculate_aurc(confidence_curve)
-
-    hybrid_aurc = calculate_aurc(hybrid_curve)
-
-    target_coverages = [
-        0.10,
-        0.20,
-        0.30,
-        0.32,
-        0.40,
-        0.50,
-        0.54,
-        0.60,
-        0.70,
-        0.80,
-        0.90,
-        1.00
-    ]
-
-    comparisons = compare_at_target_coverages(
-        confidence_results=(confidence_results),
-        hybrid_results=(hybrid_results),
-        target_coverages=(target_coverages)
+    confidence_aurc = (
+        calculate_aurc(
+            confidence_curve
+        )
     )
 
-    total_count = len(predictions)
-    correct_count = sum(correctness)
+    hybrid_aurc = (
+        calculate_aurc(
+            hybrid_curve
+        )
+    )
 
-    incorrect_count = total_count - correct_count
-    average_exact_match = sum(exact_match_scores) / total_count
-    average_token_f1 = sum(token_f1_scores) / total_count
+    comparisons = (
+        compare_at_target_coverages(
+            confidence_results=(
+                confidence_results
+            ),
+            hybrid_results=(
+                hybrid_results
+            ),
+            target_coverages=list(
+                DEFAULT_TARGET_COVERAGES
+            ),
+        )
+    )
+
+    total_count = len(
+        predictions
+    )
+
+    correct_count = sum(
+        int(value)
+        for value
+        in correctness
+    )
+
+    incorrect_count = (
+        total_count
+        - correct_count
+    )
+
+    average_exact_match = (
+        sum(
+            exact_match_scores
+        )
+        / total_count
+    )
+
+    average_token_f1 = (
+        sum(
+            token_f1_scores
+        )
+        / total_count
+    )
+
+    aurc_difference = (
+        hybrid_aurc
+        - confidence_aurc
+    )
+
+    aurc_relative_change = (
+        None
+        if math.isclose(
+            confidence_aurc,
+            0.0,
+            abs_tol=1e-15,
+        )
+        else (
+            aurc_difference
+            / confidence_aurc
+        )
+    )
 
     summary = {
-        "input_path": str(input_path),
-        "total_predictions": (total_count),
-        "correct_predictions": (correct_count),
-        "incorrect_predictions": (incorrect_count),
-        "relaxed_f1_threshold": (relaxed_f1_threshold),
-        "average_exact_match": (average_exact_match),
-        "average_token_f1": (average_token_f1),
-        "confidence_aurc": (confidence_aurc),
-        "hybrid_aurc": (hybrid_aurc),
-        "aurc_difference": (hybrid_aurc - confidence_aurc),
+        "input_path": (
+            str(input_path)
+        ),
+        "total_predictions": (
+            total_count
+        ),
+        "correct_predictions": (
+            correct_count
+        ),
+        "incorrect_predictions": (
+            incorrect_count
+        ),
+        "relaxed_f1_threshold": (
+            relaxed_f1_threshold
+        ),
+        "correctness_definition": (
+            "answerable: exact match OR token F1 "
+            ">= relaxed threshold; unanswerable "
+            "forced-answer candidates are incorrect"
+        ),
+        "average_exact_match": (
+            average_exact_match
+        ),
+        "average_token_f1": (
+            average_token_f1
+        ),
+        "aurc_definition": (
+            "mean selective risk over every "
+            "non-empty score-ranked prefix"
+        ),
+        "tie_break_rule": (
+            "score descending, "
+            "original index ascending"
+        ),
+        "confidence_aurc": (
+            confidence_aurc
+        ),
+        "hybrid_aurc": (
+            hybrid_aurc
+        ),
+        "aurc_difference": (
+            aurc_difference
+        ),
         "aurc_relative_change": (
-            (hybrid_aurc - confidence_aurc) / confidence_aurc
-            if confidence_aurc
-            else 0.0
-        )
+            aurc_relative_change
+        ),
+        "threshold_grid": {
+            "start": (
+                threshold_start
+            ),
+            "end": (
+                threshold_end
+            ),
+            "step": (
+                threshold_step
+            ),
+        },
+        "matched_coverage_note": (
+            "Threshold-grid comparisons are "
+            "approximate; coverage_gap reports "
+            "hybrid coverage minus confidence coverage."
+        ),
     }
 
-    output_dir = Path(output_dir)
+    output_directory = Path(
+        output_dir
+    )
 
-    output_dir.mkdir(
+    output_directory.mkdir(
         parents=True,
         exist_ok=True,
     )
 
     save_csv(
-        rows=confidence_results,
-        output_path=(output_dir / "confidence_threshold_sweep.csv")
+        rows=(
+            confidence_results
+        ),
+        output_path=(
+            output_directory
+            / "confidence_threshold_sweep.csv"
+        ),
     )
 
     save_csv(
-        rows=hybrid_results,
-        output_path=(output_dir / "hybrid_threshold_sweep.csv")
+        rows=(
+            hybrid_results
+        ),
+        output_path=(
+            output_directory
+            / "hybrid_threshold_sweep.csv"
+        ),
     )
 
     save_csv(
-        rows=confidence_curve,
-        output_path=(output_dir / "confidence_risk_coverage_curve.csv")
+        rows=(
+            confidence_curve
+        ),
+        output_path=(
+            output_directory
+            / "confidence_risk_coverage_curve.csv"
+        ),
     )
 
     save_csv(
-        rows=hybrid_curve,
-        output_path=(output_dir / "hybrid_risk_coverage_curve.csv")
+        rows=(
+            hybrid_curve
+        ),
+        output_path=(
+            output_directory
+            / "hybrid_risk_coverage_curve.csv"
+        ),
     )
 
     save_csv(
-        rows=comparisons,
-        output_path=(output_dir / "matched_coverage_comparison.csv")
+        rows=(
+            comparisons
+        ),
+        output_path=(
+            output_directory
+            / "matched_coverage_comparison.csv"
+        ),
     )
 
     save_json(
-        data=summary,
-        output_path=(output_dir / "risk_coverage_summary.json")
+        data=(
+            summary
+        ),
+        output_path=(
+            output_directory
+            / "risk_coverage_summary.json"
+        ),
     )
 
-    print("\nRisk–coverage evaluation completed.")
+    print(
+        "\nRisk-coverage evaluation completed."
+    )
 
-    print(f"Input: {input_path}")
+    print(
+        f"Input: "
+        f"{input_path}"
+    )
 
-    print(f"Total predictions: {total_count}")
+    print(
+        f"Total predictions: "
+        f"{total_count}"
+    )
 
-    print(f"Correct predictions: {correct_count}")
+    print(
+        f"Correct predictions: "
+        f"{correct_count}"
+    )
 
-    print(f"Incorrect predictions: {incorrect_count}")
+    print(
+        f"Incorrect predictions: "
+        f"{incorrect_count}"
+    )
 
-    print(f"Average Exact Match: {average_exact_match:.4f}")
+    print(
+        f"Average Exact Match: "
+        f"{average_exact_match:.4f}"
+    )
 
-    print(f"Average Token F1: {average_token_f1:.4f}")
-
-    selected_thresholds = [
-        0.30,
-        0.40,
-        0.50,
-        0.60,
-        0.70,
-        0.80,
-        0.90,
-        0.95
-    ]
+    print(
+        f"Average Token F1: "
+        f"{average_token_f1:.4f}"
+    )
 
     print_threshold_summary(
-        system_name=("CONFIDENCE THRESHOLD SWEEP"),
-        results=confidence_results,
-        selected_thresholds=(selected_thresholds)
+        system_name=(
+            "CONFIDENCE THRESHOLD SWEEP"
+        ),
+        results=(
+            confidence_results
+        ),
+        selected_thresholds=list(
+            DEFAULT_DISPLAY_THRESHOLDS
+        ),
     )
 
     print_threshold_summary(
-        system_name=("HYBRID THRESHOLD SWEEP"),
-        results=hybrid_results,
-        selected_thresholds=(selected_thresholds)
+        system_name=(
+            "HYBRID THRESHOLD SWEEP"
+        ),
+        results=(
+            hybrid_results
+        ),
+        selected_thresholds=list(
+            DEFAULT_DISPLAY_THRESHOLDS
+        ),
     )
 
-    print_matched_coverage_table(comparisons)
+    print_matched_coverage_table(
+        comparisons
+    )
 
-    print("\n" + "=" * 60)
+    print(
+        "\n"
+        + "=" * 60
+    )
 
-    print("AURC SUMMARY")
+    print(
+        "AURC SUMMARY"
+    )
 
-    print("=" * 60)
+    print(
+        "=" * 60
+    )
 
-    print(f"Confidence AURC: {confidence_aurc:.6f}")
+    print(
+        f"Confidence AURC: "
+        f"{confidence_aurc:.6f}"
+    )
 
-    print(f"Hybrid AURC:     {hybrid_aurc:.6f}")
+    print(
+        f"Hybrid AURC:     "
+        f"{hybrid_aurc:.6f}"
+    )
 
-    print(f"Hybrid - Confidence: {hybrid_aurc - confidence_aurc:.6f}")
+    print(
+        "Hybrid - Confidence: "
+        f"{aurc_difference:.6f}"
+    )
 
-    if hybrid_aurc < confidence_aurc:
-        print("Result: Hybrid ranking is better (lower AURC).")
+    if (
+        hybrid_aurc
+        < confidence_aurc
+    ):
+        print(
+            "Result: Hybrid ranking is better "
+            "(lower AURC)."
+        )
 
-    elif hybrid_aurc > confidence_aurc:
-        print("Result: Confidence ranking is better (lower AURC).")
+    elif (
+        hybrid_aurc
+        > confidence_aurc
+    ):
+        print(
+            "Result: Confidence ranking is better "
+            "(lower AURC)."
+        )
 
     else:
-        print("Result: Both systems have equal AURC.")
+        print(
+            "Result: Both systems have equal AURC."
+        )
 
-    print(f"\nResults saved to: {output_dir}")
+    print(
+        f"\nResults saved to: "
+        f"{output_directory}"
+    )
 
     return {
-        "summary": summary,
-        "confidence_threshold_sweep": (confidence_results),
-        "hybrid_threshold_sweep": (hybrid_results),
-        "confidence_curve": (confidence_curve),
-        "hybrid_curve": (hybrid_curve),
-        "matched_coverage": (comparisons)
+        "summary": (
+            summary
+        ),
+        "confidence_threshold_sweep": (
+            confidence_results
+        ),
+        "hybrid_threshold_sweep": (
+            hybrid_results
+        ),
+        "confidence_curve": (
+            confidence_curve
+        ),
+        "hybrid_curve": (
+            hybrid_curve
+        ),
+        "matched_coverage": (
+            comparisons
+        ),
     }
 
 
-
 def parse_arguments() -> argparse.Namespace:
+    """Parse confidence-vs-hybrid risk-coverage evaluation settings."""
+
     parser = argparse.ArgumentParser(
         description=(
-            "Compare calibrated confidence and hybrid "
-            "verification using risk–coverage curves."
+            "Compare calibrated confidence and "
+            "hybrid verification using threshold "
+            "sweeps and exact risk-coverage ranking."
         )
     )
 
     parser.add_argument(
         "--input",
-        default=str(DEFAULT_INPUT_PATH)
+        default=str(
+            DEFAULT_INPUT_PATH
+        ),
     )
 
     parser.add_argument(
         "--output-dir",
-        default=str(DEFAULT_OUTPUT_DIR)
+        default=str(
+            DEFAULT_OUTPUT_DIR
+        ),
     )
 
     parser.add_argument(
         "--relaxed-f1-threshold",
         type=float,
-        default=(DEFAULT_RELAXED_F1_THRESHOLD)
+        default=(
+            DEFAULT_RELAXED_F1_THRESHOLD
+        ),
     )
 
     parser.add_argument(
         "--threshold-start",
         type=float,
-        default=(DEFAULT_THRESHOLD_START)
+        default=(
+            DEFAULT_THRESHOLD_START
+        ),
     )
 
     parser.add_argument(
         "--threshold-end",
         type=float,
-        default=(DEFAULT_THRESHOLD_END)
+        default=(
+            DEFAULT_THRESHOLD_END
+        ),
     )
 
     parser.add_argument(
         "--threshold-step",
         type=float,
-        default=(DEFAULT_THRESHOLD_STEP)
+        default=(
+            DEFAULT_THRESHOLD_STEP
+        ),
     )
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    arguments = parse_arguments()
+    arguments = (
+        parse_arguments()
+    )
 
     run_risk_coverage_evaluation(
-        input_path=arguments.input,
-        output_dir=arguments.output_dir,
-        relaxed_f1_threshold=(arguments.relaxed_f1_threshold),
-        threshold_start=(arguments.threshold_start),
-        threshold_end=(arguments.threshold_end),
-        threshold_step=(arguments.threshold_step)
+        input_path=(
+            arguments.input
+        ),
+        output_dir=(
+            arguments.output_dir
+        ),
+        relaxed_f1_threshold=(
+            arguments.relaxed_f1_threshold
+        ),
+        threshold_start=(
+            arguments.threshold_start
+        ),
+        threshold_end=(
+            arguments.threshold_end
+        ),
+        threshold_step=(
+            arguments.threshold_step
+        ),
     )

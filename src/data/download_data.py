@@ -1,53 +1,72 @@
 """
-To download the SQuAD v2 dataset from Hugging Face, verify that it contains dataset splits, save it locally, and prevent accidental overwriting of existing data.
+Download and preserve the raw SQuAD v2 dataset used by this project.
+
+The dataset is loaded from Hugging Face and saved locally under data/raw/
+without project-specific transformations.
+
+Keeping an untouched raw copy provides a stable starting point for later
+preprocessing (ön işleme) and makes it possible to rebuild the processed
+dataset from the same source data.
+
+Existing raw data is protected from accidental replacement unless
+overwrite=True is explicitly requested.
 """
 
-# shutil is used for high-level file and folder operations, such as copying, moving, or deleting them.
-import shutil
 
-# Create and manage file paths safely across operating systems.
+import shutil
 from pathlib import Path
 
-# DatasetDict represents datasets split into parts like train and validation.
-# load_dataset downloads or loads a dataset, usually from Hugging Face.
 from datasets import DatasetDict, load_dataset
 
-# This constant stores the Hugging Face dataset identifier. Here, it tells load_dataset() to use the SQuAD v2 dataset.
+# Hugging Face dataset identifier used throughout the project.
 DATASET_NAME = "rajpurkar/squad_v2"
 
 OUTPUT_DIR = Path("data/raw/squad_v2")
 
 
-# Downloads the SQuAD v2 dataset, validates its structure, and saves it locally while protecting existing data from accidental overwriting.
-def download_dataset(
-    overwrite: bool = False,  # overwrite=False means the function should not replace an existing dataset folder by default.
-) -> DatasetDict:
+def download_dataset(overwrite: bool = False) -> DatasetDict:
+    """
+    Download, validate, and save the raw SQuAD v2 dataset.
+
+    By default, an existing local copy is preserved. Setting overwrite=True
+    explicitly removes that copy before downloading and saving the dataset
+    again.
+
+    No answerability labels, calibration splits, or other project-specific
+    transformations are created here; those belong to the preprocessing step.
+    """
+
     if OUTPUT_DIR.exists():
-        # stops replacement when overwrite permission is not given.
+        # Protect an existing raw dataset unless replacement is explicitly requested.
         if not overwrite:
             raise FileExistsError(
                 f"Dataset already exists at: {OUTPUT_DIR}\n"
                 "Delete it manually or use overwrite=True."
             )
 
-        # deletes the old dataset folder completely.
+        # Remove the existing dataset before saving a fresh copy.
         shutil.rmtree(OUTPUT_DIR)
 
-    # creates the parent folder if it does not exist.
+    # Ensure the raw-data directory exists before saving the dataset.
     OUTPUT_DIR.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Downloading dataset: {DATASET_NAME}")
 
+    # Load SQuAD v2 using the Hugging Face dataset identifier defined above.
+    # Project-specific preprocessing is deliberately performed later so this
+    # directory remains an untouched raw-data source.
     dataset = load_dataset(DATASET_NAME)
 
-    # checks whether the downloaded object has dataset splits like train and validation.
+    # The project expects named splits such as train and validation.
     if not isinstance(dataset, DatasetDict):
         raise TypeError("Expected load_dataset() to return a DatasetDict.")
 
+    # Save the untouched raw dataset locally for reproducible preprocessing.
     dataset.save_to_disk(str(OUTPUT_DIR))
 
     print(f"\nDataset saved to: {OUTPUT_DIR}")
 
+    # Report the downloaded split sizes for a quick integrity check.
     for split_name, split_data in dataset.items():
         print(f"{split_name}: {len(split_data):,} examples")
 

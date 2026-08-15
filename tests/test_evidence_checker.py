@@ -7,25 +7,25 @@ import pytest
 
 from src.verification.evidence_checker import (
     answer_overlap_f1,
-    classify_evdence,
-    normalize_answe,
+    classify_evidence,
+    normalize_answer,
     summarize_evidence,
 )
 
 
-# checks that normalize_answe() correctly converts uppercase letters to lowercase.
-def test_normalize_answer_lowercases_text() -> None:
-    assert normalize_answe("James Watt") == "james watt"
+# checks that normalize_answer() correctly converts uppercase letters to lowercase.
+def test_normalize_answerr_lowercases_text() -> None:
+    assert normalize_answer("James Watt") == "james watt"
 
 
-# Checks that normalize_answe() removes punctuation like !.
+# Checks that normalize_answer() removes punctuation like !.
 def test_normalize__answer_removes_punctation() -> None:
-    assert normalize_answe("James Watt!") == "james watt"
+    assert normalize_answer("James Watt!") == "james watt"
 
 
-# Checks that normalize_answe() removes articles like a, an, and the.
-def test_normalize_answer_removes_articles() -> None:
-    assert normalize_answe("The James Watt") == "james watt"
+# Checks that normalize_answer() removes articles like a, an, and the.
+def test_normalize_answerr_removes_articles() -> None:
+    assert normalize_answer("The James Watt") == "james watt"
 
 
 # Checks that two identical answers get an F1 similarity score of about 1.0.
@@ -58,13 +58,13 @@ def test_answer_overlap_f1_returns_zero_for_empty_overlap() -> None:
 
 # Checks that when the generated answer and verifier answer match strongly, and the verifier confidence is high enough, the function returns SUPPORTED.
 def test_classify_evidence_supported() -> None:
-    correct_label, reason, match = classify_evdence(
+    correct_label, reason, match = classify_evidence(
         generated_answer="James Watt",
         verifier_answer="James Watt",
         verifier_score=0.95,
         support_threshold=0.30,
         match_threshold=0.80,
-        contradiction_threshold=0.50,
+        rejection_threshold=0.50,
     )
 
     assert correct_label == "SUPPORTED"
@@ -74,13 +74,13 @@ def test_classify_evidence_supported() -> None:
 
 # Checks that when the generated answer and verifier answer are completely different, and the verifier is highly confident, the function returns UNSUPPORTED.
 def test_classify_evidence_unsupported_for_different_answer() -> None:
-    correct_label, reason, match = classify_evdence(
+    correct_label, reason, match = classify_evidence(
         generated_answer="James Watt",
         verifier_answer="Albert Einstein",
         verifier_score=0.95,
         support_threshold=0.30,
         match_threshold=0.80,
-        contradiction_threshold=0.50,
+        rejection_threshold=0.50,
     )
 
     assert correct_label == "UNSUPPORTED"
@@ -90,13 +90,13 @@ def test_classify_evidence_unsupported_for_different_answer() -> None:
 
 # Checks that when the verifier returns no answer and is highly confident about it, the generated answer is classified as UNSUPPORTED.
 def test_classify_evidence_unsupported_for_confident_no_answer() -> None:
-    correct_label, reason, match = classify_evdence(
+    correct_label, reason, match = classify_evidence(
         generated_answer="James Watt",
         verifier_answer="",
         verifier_score=0.90,
         support_threshold=0.30,
         match_threshold=0.80,
-        contradiction_threshold=0.50,
+        rejection_threshold=0.50,
     )
 
     assert correct_label == "UNSUPPORTED"
@@ -106,13 +106,13 @@ def test_classify_evidence_unsupported_for_confident_no_answer() -> None:
 
 # Checks that when the verifier gives no answer but has low confidence, the result is UNCERTAIN instead of UNSUPPORTED.
 def test_classify_evidence_uncertain_for_low_confidence_no_answer() -> None:
-    correct_label, reason, match = classify_evdence(
+    correct_label, reason, match = classify_evidence(
         generated_answer="James Watt",
         verifier_answer="",
         verifier_score=0.20,
         support_threshold=0.30,
         match_threshold=0.80,
-        contradiction_threshold=0.50,
+        rejection_threshold=0.50,
     )
 
     assert correct_label == "UNCERTAIN"

@@ -1,19 +1,63 @@
 """
-# : load predictions -> infer correctness -> build different scoring methods -> rank predictions -> compare risk/accuracy at equal coverage -> calculate AURC -> save tables and plots.
+Evaluate score-ranking ablations for selective question answering.
+
+This module compares confidence and verifier-derived ranking scores by asking:
+
+    If predictions are sorted from most to least trustworthy, how much risk
+    remains as coverage increases?
+
+The canonical methods evaluated here are:
+
+1. Confidence only
+2. Question-aware semantic V2
+3. Confidence + question-aware semantic V2
+4. Self-verifier only
+5. Confidence + self-verifier
+
+Optional lexical and older semantic scores are included only when complete
+compatible fields are present.
+
+For every method, the evaluator:
+
+- reconstructs underlying QA correctness,
+- ranks records by score in descending order,
+- breaks score ties by original record index,
+- evaluates matched coverage levels,
+- builds the full discrete risk-coverage curve,
+- calculates AURC,
+- calculates normalized AURC relative to oracle and random ranking,
+- saves JSON/CSV summaries and a risk-coverage plot.
+
+Important
+---------
+Correctness is reconstructed from the prediction, answerability/reference
+information, and explicit ANSWER/ABSTAIN decision when necessary. Stored
+correctness fields are used only as a compatibility fallback.
+
+For unanswerable examples, an explicit decision takes precedence. This prevents
+a punctuation-only forced answer such as "." from becoming correct merely
+because answer normalization removes punctuation.
+
+Question-aware V2 records with invalid generated claims receive semantic score
+0.0 by design.
+
+`self_verification_score` is defined on [-1, 1] and is mapped linearly to [0, 1]:
+
+    normalized_self_score = (score + 1) / 2
+
+The two fixed fusion methods use equal-weight geometric means:
+
+    sqrt(confidence * verifier_score)
+
+AURC in this repository is the arithmetic mean of risk at every non-empty
+prefix of the ranked list. Lower AURC is better.
 """
 
-
-# helps Python handle type hints more safely and cleanly, especially when types refer to classes/functions defined later
 from __future__ import annotations
 
 import argparse
 import csv
-import json
 import math
-import re
-import string
-
-# Imports generic collection types for type hints: Iterable for loopable items and Sequence for ordered indexable collections.
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -21,11 +65,27 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 
-DEFAULT_INPUT_PATH = Path(
-    "outputs/predictions/calibration_with_question_aware_semantic_evidence_v2.jsonl"
+from src.evaluation.metrics import (
+    normalize_answer as shared_normalize_answer,
+)
+from src.evaluation.metrics import (
+    parse_answerability,
+)
+from src.utils.io import (
+    load_jsonl as shared_load_jsonl,
+)
+from src.utils.io import (
+    save_json as shared_save_json,
 )
 
-DEFAULT_OUTPUT_DIRECTORY = Path("outputs/evaluation/question_aware_ablation")
+DEFAULT_INPUT_PATH = Path(
+    "outputs/predictions/"
+    "calibration_with_question_aware_semantic_evidence_v2.jsonl"
+)
+
+DEFAULT_OUTPUT_DIRECTORY = Path(
+    "outputs/evaluation/question_aware_ablation"
+)
 
 DEFAULT_COVERAGE_LEVELS = (
     0.10,
@@ -37,27 +97,33 @@ DEFAULT_COVERAGE_LEVELS = (
     0.70,
     0.80,
     0.90,
-    1.00
+    1.00,
 )
 
 
-CONFIDENCE_FIELDS = (
+CALIBRATED_CONFIDENCE_FIELDS = (
     "calibrated_confidence",
     "temperature_scaled_confidence",
     "qa_calibrated_confidence",
-    "confidence",
-    "qa_confidence",
-    "prediction_confidence",
-    "max_probability",
-    "probability"
+)
+
+GENERIC_CONFIDENCE_FIELD = "confidence"
+CONFIDENCE_CALIBRATED_FLAG = "confidence_is_calibrated"
+
+# Historical public constant retained for compatibility.
+CONFIDENCE_FIELDS = (
+    *CALIBRATED_CONFIDENCE_FIELDS,
+    GENERIC_CONFIDENCE_FIELD,
 )
 
 LEXICAL_SCORE_FIELDS = (
+    "combined_evidence_score",
+    "evidence_score",
     "lexical_verification_score",
     "lexical_score",
     "lexical_evidence_score",
     "lexical_support_score",
-    "lexical_overlap_score"
+    "lexical_overlap_score",
 )
 
 OLD_SEMANTIC_SCORE_FIELDS = (
@@ -65,14 +131,20 @@ OLD_SEMANTIC_SCORE_FIELDS = (
     "semantic_entailment_score",
     "semantic_verification_score",
     "semantic_score",
-    "entailment_probability"
+    "entailment_probability",
 )
 
-QUESTION_AWARE_SCORE_FIELDS = ("qa_entailment_probability",)
+QUESTION_AWARE_SCORE_FIELDS = (
+    "qa_entailment_probability",
+)
 
-SELF_VERIFICATION_SCORE_FIELDS = ("self_verification_score",)
+SELF_VERIFICATION_SCORE_FIELDS = (
+    "self_verification_score",
+)
 
-QUESTION_AWARE_VALIDITY_FIELDS = ("qa_claim_valid",)
+QUESTION_AWARE_VALIDITY_FIELDS = (
+    "qa_claim_valid",
+)
 
 PREDICTION_FIELDS = (
     "predicted_answer",
@@ -81,7 +153,7 @@ PREDICTION_FIELDS = (
     "prediction",
     "model_answer",
     "generated_answer",
-    "answer"
+    "answer",
 )
 
 REFERENCE_FIELDS = (
@@ -95,27 +167,40 @@ REFERENCE_FIELDS = (
     "ground_truth",
     "answers",
     "answer_texts",
-    "gold"
+    "gold",
+)
+
+ANSWERABILITY_FIELDS = (
+    "is_answerable",
+    "answerable",
+    "gold_is_answerable",
 )
 
 CORRECTNESS_FIELDS = (
-    "is_correct",
-    "correct",
     "exact_match",
     "em",
-    "prediction_correct"
+    "is_exact_match",
+    "exact_match_score",
+    "em_score",
+    "prediction_correct",
+    "answer_correct",
+    "prediction_is_correct",
+    "qa_is_correct",
+    "correct",
+    "is_correct",
 )
 
 
-
-# Stores all selective-QA evaluation metrics for one coverage level in one structured, immutable object.
-# Dostum, we use a class here because these values all belong together. Instead of passing around 11 separate variables, we package them into one object:
-# metrics = SelectiveMetrics(
-    # requested_coverage=0.8,
-    # answered=80,
-    # ...
 @dataclass(frozen=True)
 class SelectiveMetrics:
+    """
+    Metrics at one requested coverage level.
+
+    `correct_abstained` and `incorrect_abstained` preserve historical output
+    names. They refer to the correctness of the underlying QA predictions that
+    were abstained on, not to whether abstention itself was a correct action.
+    """
+
     requested_coverage: float
     answered: int
     total: int
@@ -129,10 +214,16 @@ class SelectiveMetrics:
     incorrect_abstained: int
 
 
-
-# Stores the complete evaluation result for one scoring method, including its overall accuracy, AURC, and matched-coverage metrics.
 @dataclass(frozen=True)
 class MethodResult:
+    """
+    Complete risk-coverage evaluation for one ranking method.
+
+    `full_accuracy` is underlying QA prediction accuracy before selective
+    ranking. It is therefore identical across methods evaluated on the same
+    records.
+    """
+
     method: str
     score_field: str
     available_records: int
@@ -143,123 +234,103 @@ class MethodResult:
     matched_coverage: list[SelectiveMetrics]
 
 
-
-# open JSONL file -> read line by line -> parse JSON -> validate each record -> return all records
 def load_jsonl(
     path: str | Path,
 ) -> list[dict[str, Any]]:
-    input_path = Path(path)
+    """
+    Load JSONL records through the repository's shared I/O implementation.
 
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file does not exist: {input_path}")
+    The historical evaluator required at least one record, so that behavior is
+    preserved here.
+    """
 
-    records: list[dict[str, Any]] = []
-
-    with input_path.open("r", encoding="utf-8") as input_file:
-        for line_number, line in enumerate(input_file, start=1):
-            stripped_line = line.strip()
-
-            if not stripped_line:
-                continue
-
-            try:
-                record = json.loads(stripped_line)
-
-            except json.JSONDecodeError as error:
-                raise ValueError(
-                    f"Invalid JSON at line {line_number}: {error}"
-                ) from error
-
-            if not isinstance(record, dict):
-                raise TypeError(f"Line {line_number} must contain a JSON object.")
-
-            records.append(record)
+    records = shared_load_jsonl(path)
 
     if not records:
-        raise ValueError(f"No records were found in {input_path}")
+        raise ValueError(
+            f"No records were found in {Path(path)}"
+        )
 
     return records
 
 
-# data -> create output folder if needed -> write readable JSON file.
 def save_json(
     data: Any,
-    path: str | Path
+    path: str | Path,
 ) -> None:
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    """Save JSON through the repository's shared UTF-8 JSON writer."""
 
-    with output_path.open("w", encoding="utf-8") as output_file:
-        json.dump(
-            data,
-            output_file,
-            indent=2,
-            ensure_ascii=False
-        )
+    shared_save_json(
+        data,
+        path,
+    )
 
 
+def normalize_answer(
+    answer: Any,
+) -> str:
+    """
+    Normalize answer text using the shared project normalization rule.
 
-# check fields in order -> return first valid value -> otherwise return default.
+    The local wrapper preserves this module's historical public function.
+    """
+
+    return shared_normalize_answer(
+        str(answer)
+    )
+
+
 def get_first_value(
     record: dict[str, Any],
     field_names: Sequence[str],
-    default: Any = None
+    default: Any = None,
 ) -> Any:
+    """Return the first available non-None value from ordered field aliases."""
+
     for field_name in field_names:
-        if field_name in record and record[field_name] is not None:
+        if (
+            field_name in record
+            and record[field_name] is not None
+        ):
             return record[field_name]
 
     return default
 
 
+def clean_text(text: Any) -> str:
+    """Collapse repeated whitespace and remove surrounding whitespace."""
 
-# convert to string -> collapse extra whitespace -> trim beginning/end spaces.
-def clean_text(
-    text: Any,
-) -> str:
-    return re.sub(
-        r"\s+",
-        " ",
-        str(text),
-    ).strip()
+    if text is None:
+        return ""
 
-
-
-# clean text -> lowercase -> remove punctuation -> remove a/an/the -> normalize spaces.
-def normalize_answer(
-    answer: Any,
-) -> str:
-    text = clean_text(answer).lower()
-
-    text = "".join(
-        character for character in text if character not in string.punctuation
+    return " ".join(
+        str(text).split()
     )
 
-    text = re.sub(
-        r"\b(a|an|the)\b",
-        " ",
-        text
-    )
 
-    return " ".join(text.split())
-
-
-
-# check bool/int/float/string formats -> convert recognized values to True or False -> otherwise return None
 def coerce_boolean(
-    value: Any
+    value: Any,
 ) -> bool | None:
+    """
+    Convert common stored Boolean/correctness representations.
+
+    None is returned when the value cannot be interpreted unambiguously.
+    """
+
     if isinstance(value, bool):
         return value
 
-    if isinstance(value, int):
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+    ):
         if value == 1:
             return True
 
         if value == 0:
             return False
 
-    if isinstance(value, float):
+    if isinstance(value, float) and math.isfinite(value):
         if math.isclose(value, 1.0):
             return True
 
@@ -267,14 +338,16 @@ def coerce_boolean(
             return False
 
     if isinstance(value, str):
-        normalized_value = value.strip().lower()
+        normalized_value = (
+            value.strip().lower()
+        )
 
         if normalized_value in {
             "true",
             "yes",
             "correct",
             "1",
-            "1.0"
+            "1.0",
         }:
             return True
 
@@ -283,23 +356,28 @@ def coerce_boolean(
             "no",
             "incorrect",
             "0",
-            "0.0"
+            "0.0",
         }:
             return False
 
     return None
 
 
-
-# check value -> try float() conversion -> reject invalid or non-finite numbers -> return valid float.
 def coerce_float(
     value: Any,
 ) -> float | None:
-    if value is None:
-        return None
+    """
+    Convert a stored numeric value to a finite float.
 
-    if isinstance(value, bool):
-        return float(value)
+    Boolean values are rejected because True/False should not silently become
+    ranking scores 1.0/0.0.
+    """
+
+    if (
+        value is None
+        or isinstance(value, bool)
+    ):
+        return None
 
     try:
         number = float(value)
@@ -313,51 +391,32 @@ def coerce_float(
     return number
 
 
-
-# Forces a probability value to stay within the valid range from 0.0 to 1.0.
 def clamp_probability(
     value: float,
-) -> float:return max(
+) -> float:
+    """
+    Clamp a derived value to [0, 1].
+
+    Retained for API compatibility. Canonical experimental input scores are
+    validated instead of silently clamped.
+    """
+
+    return max(
         0.0,
-        min(1.0, value),
+        min(
+            1.0,
+            float(value),
+        ),
     )
 
 
-# find reference field -> handle string/dict/other formats -> extract answer values -> return list[str].
-def extract_references(
-    record: dict[str, Any],
-) -> list[str]:
-    raw_value = get_first_value(
-        record,
-        REFERENCE_FIELDS,
-        default=None
-    )
-
-    if raw_value is None:
-        return []
-
-    if isinstance(raw_value, str):
-        return [raw_value]
-
-    if isinstance(raw_value, dict):
-        for possible_field in (
-            "text",
-            "answers",
-            "answer"
-        ):
-            if possible_field in raw_value:
-                return extract_reference_value(raw_value[possible_field])
-
-        return []
-
-    return extract_reference_value(raw_value)
-
-
-
-# check value type -> handle string/dict/iterable -> recursively extract nested answers -> return list[str].
 def extract_reference_value(
-    value: Any
+    value: Any,
 ) -> list[str]:
+    """
+    Recursively extract answer strings from supported reference structures.
+    """
+
     if value is None:
         return []
 
@@ -368,10 +427,12 @@ def extract_reference_value(
         for possible_field in (
             "text",
             "answer",
-            "answers"
+            "answers",
         ):
             if possible_field in value:
-                return extract_reference_value(value[possible_field])
+                return extract_reference_value(
+                    value[possible_field]
+                )
 
         return []
 
@@ -379,91 +440,312 @@ def extract_reference_value(
         references: list[str] = []
 
         for item in value:
-            references.extend(extract_reference_value(item))
+            references.extend(
+                extract_reference_value(item)
+            )
 
         return references
 
     return [str(value)]
 
 
-
-# check direct correctness labels first -> if unavailable, find prediction + references -> normalize them -> compare them -> return True or False.
-def infer_correctness(
+def extract_references(
     record: dict[str, Any],
-) -> bool:
-    expanded_correctness_fields = (
-        *CORRECTNESS_FIELDS,
-        "is_exact_match",
-        "exact_match_score",
-        "em_score",
-        "answer_correct",
-        "prediction_is_correct",
-        "qa_is_correct"
+) -> list[str]:
+    """Extract reference answers from the first supported reference field."""
+
+    raw_value = get_first_value(
+        record,
+        REFERENCE_FIELDS,
+        default=None,
     )
 
-    # 1. Prefer an explicit correctness field.
-    for field_name in expanded_correctness_fields:
+    if raw_value is None:
+        return []
+
+    return extract_reference_value(
+        raw_value
+    )
+
+
+def get_reference_field(
+    record: dict[str, Any],
+) -> tuple[bool, Any]:
+    """
+    Return whether a reference field exists and its raw value.
+
+    Presence is tracked separately from extracted content so an explicitly empty
+    reference list can represent an unanswerable example.
+    """
+
+    for field_name in REFERENCE_FIELDS:
+        if field_name in record:
+            return (
+                True,
+                record[field_name],
+            )
+
+    return (
+        False,
+        None,
+    )
+
+
+def get_explicit_answerability(
+    record: dict[str, Any],
+) -> bool | None:
+    """
+    Retrieve explicit answerability metadata when available.
+
+    Malformed explicit values are rejected instead of silently inferred from
+    references.
+    """
+
+    for field_name in ANSWERABILITY_FIELDS:
         if field_name not in record:
             continue
 
-        correctness = coerce_boolean(record[field_name])
+        value = record[field_name]
+
+        if value is None:
+            continue
+
+        try:
+            return parse_answerability(
+                value
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ) as error:
+            raise ValueError(
+                f"Invalid answerability value in "
+                f"{field_name!r}: {value!r}."
+            ) from error
+
+    return None
+
+
+def get_stored_correctness(
+    record: dict[str, Any],
+) -> bool | None:
+    """
+    Retrieve a stored correctness value only as a compatibility fallback.
+
+    Raw prediction/reference reconstruction is preferred because generic fields
+    such as `is_correct` can have different meanings in different pipeline
+    stages.
+    """
+
+    for field_name in CORRECTNESS_FIELDS:
+        if field_name not in record:
+            continue
+
+        correctness = coerce_boolean(
+            record[field_name]
+        )
 
         if correctness is not None:
             return correctness
 
+    return None
+
+
+def infer_correctness(
+    record: dict[str, Any],
+) -> bool:
+    """
+    Reconstruct underlying QA prediction correctness.
+
+    Preferred reconstruction uses:
+
+    - predicted answer text,
+    - reference answers,
+    - optional explicit answerability metadata,
+    - explicit ANSWER/ABSTAIN decision for unanswerable examples.
+
+    Answerable examples are correct only when normalized prediction text exactly
+    matches a normalized non-empty reference.
+
+    For unanswerable examples:
+    - if an explicit decision exists, only ABSTAIN is correct;
+    - otherwise, only a genuinely empty raw prediction is treated as correct.
+
+    The raw-text fallback intentionally does not use answer normalization, so a
+    punctuation-only forced answer such as "." is not mistaken for abstention.
+    """
+
     prediction_value = get_first_value(
         record,
         PREDICTION_FIELDS,
-        default=None
+        default=None,
     )
+
+    (
+        reference_field_found,
+        raw_reference_value,
+    ) = get_reference_field(
+        record
+    )
+
+    if (
+        prediction_value is not None
+        and reference_field_found
+    ):
+        normalized_prediction = (
+            normalize_answer(
+                prediction_value
+            )
+        )
+
+        references = (
+            extract_reference_value(
+                raw_reference_value
+            )
+        )
+
+        normalized_references = [
+            normalize_answer(
+                reference
+            )
+            for reference
+            in references
+        ]
+
+        normalized_references = [
+            reference
+            for reference
+            in normalized_references
+            if reference
+        ]
+
+        explicit_answerability = (
+            get_explicit_answerability(
+                record
+            )
+        )
+
+        inferred_answerability = bool(
+            normalized_references
+        )
+
+        if explicit_answerability is not None:
+            if (
+                explicit_answerability
+                and not normalized_references
+            ):
+                raise ValueError(
+                    "Record is explicitly answerable "
+                    "but has no usable reference answer."
+                )
+
+            if (
+                not explicit_answerability
+                and normalized_references
+            ):
+                raise ValueError(
+                    "Record is explicitly unanswerable "
+                    "but contains non-empty reference answers."
+                )
+
+            is_answerable = (
+                explicit_answerability
+            )
+
+        else:
+            is_answerable = (
+                inferred_answerability
+            )
+
+        if is_answerable:
+            return any(
+                normalized_prediction
+                == reference
+                for reference
+                in normalized_references
+            )
+
+        decision = clean_text(
+            record.get(
+                "decision",
+                "",
+            )
+        ).upper()
+
+        if decision:
+            if decision not in {
+                "ANSWER",
+                "ABSTAIN",
+            }:
+                raise ValueError(
+                    "Unanswerable-record decision must "
+                    f"be ANSWER or ABSTAIN, received "
+                    f"{decision!r}."
+                )
+
+            return decision == "ABSTAIN"
+
+        return (
+            clean_text(
+                prediction_value
+            )
+            == ""
+        )
+
+    stored_correctness = (
+        get_stored_correctness(
+            record
+        )
+    )
+
+    if stored_correctness is not None:
+        return stored_correctness
 
     if prediction_value is None:
         raise ValueError(
-            "Could not infer correctness because no prediction "
-            f"field was found. Available keys: {sorted(record.keys())}"
+            "Could not infer correctness because "
+            "no prediction field was found. "
+            f"Available keys: "
+            f"{sorted(record.keys())}"
         )
-
-    normalized_prediction = normalize_answer(prediction_value)
-
-    # Determine whether a reference field genuinely exists.
-    reference_field_found = False
-    raw_reference_value: Any = None
-
-    for field_name in REFERENCE_FIELDS:
-        if field_name in record:
-            reference_field_found = True
-            raw_reference_value = record[field_name]
-            break
 
     if not reference_field_found:
         raise ValueError(
-            "Could not infer correctness because no reference-answer "
-            f"field was found. Available keys: {sorted(record.keys())}"
+            "Could not infer correctness because "
+            "no reference-answer field was found. "
+            f"Available keys: "
+            f"{sorted(record.keys())}"
         )
 
-    references = extract_reference_value(raw_reference_value)
-
-    normalized_references = [normalize_answer(reference) for reference in references]
-
-    # For unanswerable examples, respect the explicit system decision.\n    # A punctuation-only forced answer such as "." is still an ANSWER, not an abstention.\n    if not normalized_references:\n        decision = clean_text(record.get("decision", "" )).upper()\n        if decision:\n            return decision == "ABSTAIN"\n        return clean_text(prediction_value) == ""
-
-    return any(
-        normalized_prediction == reference for reference in normalized_references
+    raise ValueError(
+        "Could not infer correctness from "
+        "the available record."
     )
 
 
-
-# check each candidate field -> count how many records contain a usable number -> return the field with the highest count.
 def find_available_field(
     records: Sequence[dict[str, Any]],
-    candidates: Sequence[str]
+    candidates: Sequence[str],
 ) -> str | None:
+    """
+    Return the candidate numeric field with the greatest usable coverage.
+
+    Candidate order breaks ties, keeping field selection deterministic.
+    """
+
     best_field: str | None = None
     best_count = 0
 
     for field_name in candidates:
         numeric_count = sum(
-            coerce_float(record.get(field_name)) is not None for record in records
+            coerce_float(
+                record.get(
+                    field_name
+                )
+            )
+            is not None
+            for record in records
         )
 
         if numeric_count > best_count:
@@ -473,44 +755,198 @@ def find_available_field(
     return best_field
 
 
+def find_calibrated_confidence_field(
+    records: Sequence[dict[str, Any]],
+) -> str:
+    """
+    Resolve the confidence field used by canonical ranking/fusion.
 
-# get field value -> convert to float -> if invalid return None -> otherwise force it into 0.0–1.0.
-def extract_numeric_score(
+    Explicit calibrated fields are preferred. The generic `confidence` field is
+    allowed only when every record explicitly marks it as calibrated.
+    """
+
+    field_name = find_available_field(
+        records,
+        CALIBRATED_CONFIDENCE_FIELDS,
+    )
+
+    if field_name is not None:
+        return field_name
+
+    has_generic_confidence = all(
+        coerce_float(
+            record.get(
+                GENERIC_CONFIDENCE_FIELD
+            )
+        )
+        is not None
+        for record in records
+    )
+
+    generic_is_calibrated = all(
+        coerce_boolean(
+            record.get(
+                CONFIDENCE_CALIBRATED_FLAG
+            )
+        )
+        is True
+        for record in records
+    )
+
+    if (
+        has_generic_confidence
+        and generic_is_calibrated
+    ):
+        return (
+            GENERIC_CONFIDENCE_FIELD
+        )
+
+    raise ValueError(
+        "No complete calibrated confidence "
+        "field was found. "
+        "Checked explicit fields: "
+        f"{CALIBRATED_CONFIDENCE_FIELDS}. "
+        "The generic 'confidence' field is "
+        "accepted only when "
+        "'confidence_is_calibrated' is true "
+        "for every record."
+    )
+
+
+def extract_probability_score(
     record: dict[str, Any],
-    field_name: str
+    field_name: str,
 ) -> float | None:
-    value = coerce_float(record.get(field_name))
+    """
+    Extract a finite probability-like score in [0, 1].
+
+    Out-of-range values are rejected rather than silently clamped.
+    """
+
+    value = coerce_float(
+        record.get(
+            field_name
+        )
+    )
 
     if value is None:
         return None
 
-    return clamp_probability(value)
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"Score field {field_name!r} "
+            "must lie in [0, 1], "
+            f"received {value}."
+        )
+
+    return value
 
 
-
-# check claim validity -> if not valid, return 0.0 -> otherwise extract the score -> if missing, return 0.0 -> else return the score.
-def extract_question_aware_score(
+def extract_numeric_score(
     record: dict[str, Any],
-    score_field: str
-) -> float:
-    claim_valid = get_first_value(
+    field_name: str,
+) -> float | None:
+    """
+    Compatibility wrapper for probability-like experimental scores.
+
+    Unlike the historical implementation, out-of-range values raise an error
+    instead of being silently clamped.
+    """
+
+    return extract_probability_score(
         record,
-        QUESTION_AWARE_VALIDITY_FIELDS,
-        default=False
+        field_name,
     )
 
-    claim_valid_boolean = coerce_boolean(claim_valid)
 
-    if claim_valid_boolean is not True:
+def extract_complete_probability_scores(
+    records: Sequence[dict[str, Any]],
+    field_name: str,
+    signal_name: str,
+) -> list[float]:
+    """
+    Extract one required probability score from every record.
+    """
+
+    scores: list[float] = []
+
+    for index, record in enumerate(
+        records,
+        start=1,
+    ):
+        score = (
+            extract_probability_score(
+                record,
+                field_name,
+            )
+        )
+
+        if score is None:
+            raise ValueError(
+                f"{signal_name} field "
+                f"{field_name!r} is missing "
+                "or non-numeric in record "
+                f"{index}."
+            )
+
+        scores.append(
+            score
+        )
+
+    return scores
+
+
+def extract_question_aware_score(
+    record: dict[str, Any],
+    score_field: str,
+) -> float:
+    """
+    Extract the question-aware V2 semantic score.
+
+    Invalid generated claims receive score 0.0 by the predeclared V2 policy.
+
+    A valid claim must contain a usable entailment probability; missing scores
+    are treated as malformed experiment data rather than silently becoming zero.
+    """
+
+    claim_valid_value = (
+        get_first_value(
+            record,
+            QUESTION_AWARE_VALIDITY_FIELDS,
+            default=None,
+        )
+    )
+
+    if claim_valid_value is None:
+        raise ValueError(
+            "Question-aware record does not "
+            "contain qa_claim_valid."
+        )
+
+    claim_valid = coerce_boolean(
+        claim_valid_value
+    )
+
+    if claim_valid is None:
+        raise ValueError(
+            "qa_claim_valid could not be "
+            "interpreted as Boolean: "
+            f"{claim_valid_value!r}."
+        )
+
+    if not claim_valid:
         return 0.0
 
-    score = extract_numeric_score(
+    score = extract_probability_score(
         record,
-        score_field
+        score_field,
     )
 
     if score is None:
-        return 0.0
+        raise ValueError(
+            "Valid question-aware claim is "
+            f"missing {score_field!r}."
+        )
 
     return score
 
@@ -519,167 +955,436 @@ def extract_self_verification_score(
     record: dict[str, Any],
     score_field: str,
 ) -> float | None:
-    score = coerce_float(record.get(score_field))
+    """
+    Normalize self-verification score from [-1, 1] to [0, 1].
+    """
+
+    score = coerce_float(
+        record.get(
+            score_field
+        )
+    )
 
     if score is None:
         return None
 
-    score = max(-1.0, min(1.0, score))
+    if not -1.0 <= score <= 1.0:
+        raise ValueError(
+            "Self-verification score must "
+            "lie in [-1, 1], "
+            f"received {score}."
+        )
 
-    # self_verification_score:
-    # -1.0 -> tamamen reject
-    #  0.0 -> uncertain
-    # +1.0 -> tamamen supported
-    #
-    # Evaluation sistemimiz 0-1 score beklediği için:
-    # [-1, 1] -> [0, 1]
-    return (score + 1.0) / 2.0
+    return (
+        score + 1.0
+    ) / 2.0
 
-# make scores non-negative -> multiply them -> take the square root -> return the combined score.
+
 def geometric_mean_score(
     first_score: float,
-    second_score: float
+    second_score: float,
 ) -> float:
-    return math.sqrt(max(0.0, first_score) * max(0.0, second_score))
+    """
+    Calculate the equal-weight geometric mean of two [0, 1] scores.
+    """
 
+    for score_name, score in (
+        (
+            "first_score",
+            first_score,
+        ),
+        (
+            "second_score",
+            second_score,
+        ),
+    ):
+        if not math.isfinite(
+            score
+        ):
+            raise ValueError(
+                f"{score_name} must be finite."
+            )
 
+        if not 0.0 <= score <= 1.0:
+            raise ValueError(
+                f"{score_name} must lie "
+                "in [0, 1], "
+                f"received {score}."
+            )
 
-
-# create all indices -> sort by score descending -> if scores are equal, keep the smaller/original index first.
-def create_ranked_indices(
-    scores: Sequence[float],
-) -> list[int]:
-    return sorted(
-        range(len(scores)),
-        key=lambda index: (
-            -scores[index],
-            index
-        )
+    return math.sqrt(
+        first_score
+        * second_score
     )
 
 
+def create_ranked_indices(
+    scores: Sequence[float],
+) -> list[int]:
+    """
+    Rank records by score descending with deterministic original-index ties.
 
-# take the highest-ranked predictions -> answer only the top answer_count -> count correct/wrong answers -> calculate coverage and risk -> return everything as SelectiveMetrics.
+    Tie rule:
+
+        higher score first
+        then smaller original index first
+    """
+
+    if not scores:
+        raise ValueError(
+            "Cannot rank an empty score sequence."
+        )
+
+    if any(
+        not math.isfinite(score)
+        for score in scores
+    ):
+        raise ValueError(
+            "Ranking scores must all be finite."
+        )
+
+    return sorted(
+        range(
+            len(scores)
+        ),
+        key=lambda index: (
+            -scores[index],
+            index,
+        ),
+    )
+
+
 def metrics_at_answer_count(
     correctness: Sequence[bool],
     ranked_indices: Sequence[int],
     answer_count: int,
-    requested_coverage: float
+    requested_coverage: float,
 ) -> SelectiveMetrics:
-    total = len(correctness)
+    """
+    Evaluate selective risk when answering the top-ranked `answer_count` items.
+    """
+
+    total = len(
+        correctness
+    )
 
     if total == 0:
-        raise ValueError("Cannot evaluate an empty correctness sequence.")
+        raise ValueError(
+            "Cannot evaluate an empty "
+            "correctness sequence."
+        )
+
+    if (
+        len(ranked_indices)
+        != total
+    ):
+        raise ValueError(
+            "Ranked-index count must match "
+            "correctness count."
+        )
 
     answer_count = max(
         1,
-        min(answer_count, total)
+        min(
+            answer_count,
+            total,
+        ),
     )
 
-    answered_indices = set(ranked_indices[:answer_count])
+    answered_indices = set(
+        ranked_indices[
+            :answer_count
+        ]
+    )
 
-    correct_answered = sum(correctness[index] for index in answered_indices)
+    correct_answered = sum(
+        int(
+            correctness[index]
+        )
+        for index
+        in answered_indices
+    )
 
-    wrong_answered = answer_count - correct_answered
+    wrong_answered = (
+        answer_count
+        - correct_answered
+    )
 
-    total_correct = sum(correctness)
-    total_incorrect = total - total_correct
-    correct_abstained = total_correct - correct_answered
-    incorrect_abstained = total_incorrect - wrong_answered
-    selective_accuracy = correct_answered / answer_count
+    total_correct = sum(
+        int(value)
+        for value
+        in correctness
+    )
 
-    risk = wrong_answered / answer_count
+    total_incorrect = (
+        total
+        - total_correct
+    )
+
+    correct_abstained = (
+        total_correct
+        - correct_answered
+    )
+
+    incorrect_abstained = (
+        total_incorrect
+        - wrong_answered
+    )
+
+    selective_accuracy = (
+        correct_answered
+        / answer_count
+    )
+
+    risk = (
+        wrong_answered
+        / answer_count
+    )
 
     return SelectiveMetrics(
-        requested_coverage=requested_coverage,
-        answered=answer_count,
+        requested_coverage=(
+            requested_coverage
+        ),
+        answered=(
+            answer_count
+        ),
         total=total,
-        actual_coverage=answer_count / total,
-        selective_accuracy=selective_accuracy,
+        actual_coverage=(
+            answer_count
+            / total
+        ),
+        selective_accuracy=(
+            selective_accuracy
+        ),
         risk=risk,
-        wrong_answered=wrong_answered,
-        correct_answered=correct_answered,
-        abstained=total - answer_count,
-        correct_abstained=correct_abstained,
-        incorrect_abstained=incorrect_abstained
+        wrong_answered=(
+            wrong_answered
+        ),
+        correct_answered=(
+            correct_answered
+        ),
+        abstained=(
+            total
+            - answer_count
+        ),
+        correct_abstained=(
+            correct_abstained
+        ),
+        incorrect_abstained=(
+            incorrect_abstained
+        ),
     )
 
 
-
-# sort predictions by score -> answer more and more of them -> calculate coverage, selective accuracy, and risk at each step -> return the full curve.
 def build_risk_coverage_curve(
     correctness: Sequence[bool],
     scores: Sequence[float],
-) -> list[dict[str, float | int]]:
-    if len(correctness) != len(scores):
-        raise ValueError("Correctness and score lengths must match.")
+) -> list[
+    dict[
+        str,
+        float | int,
+    ]
+]:
+    """
+    Build the full discrete risk-coverage curve.
 
-    ranked_indices = create_ranked_indices(scores)
+    One point is emitted for every non-empty ranked prefix from 1/N through
+    full coverage.
+    """
 
-    curve: list[dict[str, float | int]] = []
+    if (
+        len(correctness)
+        != len(scores)
+    ):
+        raise ValueError(
+            "Correctness and score lengths "
+            "must match."
+        )
+
+    if not correctness:
+        raise ValueError(
+            "Cannot build a curve from "
+            "empty inputs."
+        )
+
+    ranked_indices = (
+        create_ranked_indices(
+            scores
+        )
+    )
+
+    curve: list[
+        dict[
+            str,
+            float | int,
+        ]
+    ] = []
 
     correct_answered = 0
 
-    for answer_count, record_index in enumerate(
+    for (
+        answer_count,
+        record_index,
+    ) in enumerate(
         ranked_indices,
-        start=1
+        start=1,
     ):
-        correct_answered += int(correctness[record_index])
+        correct_answered += int(
+            correctness[
+                record_index
+            ]
+        )
 
-        wrong_answered = answer_count - correct_answered
+        wrong_answered = (
+            answer_count
+            - correct_answered
+        )
 
         curve.append(
             {
-                "answered": answer_count,
-                "coverage": (answer_count / len(correctness)),
-                "selective_accuracy": (correct_answered / answer_count),
-                "risk": (wrong_answered / answer_count),
-                "wrong_answered": wrong_answered
+                "answered": (
+                    answer_count
+                ),
+                "coverage": (
+                    answer_count
+                    / len(correctness)
+                ),
+                "selective_accuracy": (
+                    correct_answered
+                    / answer_count
+                ),
+                "risk": (
+                    wrong_answered
+                    / answer_count
+                ),
+                "wrong_answered": (
+                    wrong_answered
+                ),
             }
         )
 
     return curve
 
 
-# take every risk value on the curve -> average them -> return one number representing overall selective risk.
 def calculate_aurc(
-    curve: Sequence[dict[str, float | int]],
+    curve: Sequence[
+        dict[
+            str,
+            float | int,
+        ]
+    ],
 ) -> float:
+    """
+    Calculate the repository's discrete AURC.
+
+    AURC is the arithmetic mean of risk across all non-empty ranked prefixes.
+    This definition is intentionally preserved for reproducibility.
+    """
+
     if not curve:
-        raise ValueError("Cannot calculate AURC from an empty curve.")
+        raise ValueError(
+            "Cannot calculate AURC from "
+            "an empty curve."
+        )
 
-    return sum(float(point["risk"]) for point in curve) / len(curve)
+    return (
+        sum(
+            float(
+                point[
+                    "risk"
+                ]
+            )
+            for point
+            in curve
+        )
+        / len(curve)
+    )
 
 
-
-# assign 1.0 to correct predictions and 0.0 to wrong ones -> build the ideal risk-coverage curve -> calculate its AURC
 def calculate_optimal_aurc(
     correctness: Sequence[bool],
 ) -> float:
-    oracle_scores = [1.0 if is_correct else 0.0 for is_correct in correctness]
+    """
+    Calculate oracle AURC by ranking all correct predictions before errors.
+    """
 
-    oracle_curve = build_risk_coverage_curve(
-        correctness,
-        oracle_scores
+    if not correctness:
+        raise ValueError(
+            "Cannot calculate optimal AURC "
+            "from empty correctness."
+        )
+
+    oracle_scores = [
+        (
+            1.0
+            if is_correct
+            else 0.0
+        )
+        for is_correct
+        in correctness
+    ]
+
+    oracle_curve = (
+        build_risk_coverage_curve(
+            correctness,
+            oracle_scores,
+        )
     )
 
-    return calculate_aurc(oracle_curve)
+    return calculate_aurc(
+        oracle_curve
+    )
 
 
-# calculate overall accuracy -> subtract it from 1.0 -> get the expected risk of random ranking
 def calculate_random_aurc(
     correctness: Sequence[bool],
 ) -> float:
-    return 1.0 - sum(correctness) / len(correctness)
+    """
+    Calculate expected AURC under a uniformly random ranking.
+
+    At every non-empty prefix, expected risk equals the dataset error rate.
+
+    Therefore:
+
+        random AURC = 1 - full accuracy
+    """
+
+    if not correctness:
+        raise ValueError(
+            "Cannot calculate random AURC "
+            "from empty correctness."
+        )
+
+    return (
+        1.0
+        - sum(
+            int(value)
+            for value
+            in correctness
+        )
+        / len(correctness)
+    )
 
 
-# compare actual AURC against optimal and random AURC -> scale the result -> return normalized performance.
 def calculate_normalized_aurc(
     aurc: float,
     optimal_aurc: float,
     random_aurc: float,
 ) -> float | None:
-    denominator = random_aurc - optimal_aurc
+    """
+    Normalize AURC between oracle and expected-random reference points.
+
+    0 corresponds to oracle ranking.
+
+    1 corresponds to expected random ranking.
+
+    Values above 1 are possible when a ranking performs worse than random.
+    """
+
+    denominator = (
+        random_aurc
+        - optimal_aurc
+    )
 
     if math.isclose(
         denominator,
@@ -688,10 +1393,62 @@ def calculate_normalized_aurc(
     ):
         return None
 
-    return (aurc - optimal_aurc) / denominator
+    return (
+        aurc
+        - optimal_aurc
+    ) / denominator
 
 
-# rank by score -> evaluate at different coverage levels -> build risk-coverage curve -> calculate AURC -> compare with optimal/random baselines -> return the method result and curve.
+def validate_coverage_levels(
+    coverage_levels: Sequence[float],
+) -> tuple[float, ...]:
+    """
+    Validate coverage levels and return a deterministic sorted tuple.
+    """
+
+    if not coverage_levels:
+        raise ValueError(
+            "At least one coverage level "
+            "is required."
+        )
+
+    normalized_levels: list[
+        float
+    ] = []
+
+    for value in coverage_levels:
+        numeric_value = float(
+            value
+        )
+
+        if (
+            not math.isfinite(
+                numeric_value
+            )
+            or not (
+                0.0
+                < numeric_value
+                <= 1.0
+            )
+        ):
+            raise ValueError(
+                "Coverage levels must be "
+                "finite and lie in (0, 1]."
+            )
+
+        normalized_levels.append(
+            numeric_value
+        )
+
+    return tuple(
+        sorted(
+            set(
+                normalized_levels
+            )
+        )
+    )
+
+
 def evaluate_method(
     method_name: str,
     score_field_description: str,
@@ -700,69 +1457,171 @@ def evaluate_method(
     coverage_levels: Sequence[float],
 ) -> tuple[
     MethodResult,
-    list[dict[str, float | int]],
+    list[
+        dict[
+            str,
+            float | int,
+        ]
+    ],
 ]:
-    if len(correctness) != len(scores):
-        raise ValueError(f"Length mismatch for method {method_name}.")
+    """
+    Evaluate one ranking method at matched coverage and across the full curve.
+    """
 
-    total = len(correctness)
-    ranked_indices = create_ranked_indices(scores)
+    if (
+        len(correctness)
+        != len(scores)
+    ):
+        raise ValueError(
+            f"Length mismatch for "
+            f"method {method_name}."
+        )
 
-    matched_metrics: list[SelectiveMetrics] = []
+    if not correctness:
+        raise ValueError(
+            f"Method {method_name} "
+            "has no records."
+        )
 
-    for requested_coverage in coverage_levels:
+    validated_coverage_levels = (
+        validate_coverage_levels(
+            coverage_levels
+        )
+    )
+
+    total = len(
+        correctness
+    )
+
+    ranked_indices = (
+        create_ranked_indices(
+            scores
+        )
+    )
+
+    matched_metrics: list[
+        SelectiveMetrics
+    ] = []
+
+    for requested_coverage in (
+        validated_coverage_levels
+    ):
         answer_count = max(
             1,
-            math.ceil(requested_coverage * total),
+            math.ceil(
+                requested_coverage
+                * total
+            ),
         )
 
         matched_metrics.append(
             metrics_at_answer_count(
                 correctness=correctness,
-                ranked_indices=ranked_indices,
-                answer_count=answer_count,
-                requested_coverage=requested_coverage
+                ranked_indices=(
+                    ranked_indices
+                ),
+                answer_count=(
+                    answer_count
+                ),
+                requested_coverage=(
+                    requested_coverage
+                ),
             )
         )
 
-    curve = build_risk_coverage_curve(
-        correctness,
-        scores
+    curve = (
+        build_risk_coverage_curve(
+            correctness,
+            scores,
+        )
     )
 
-    aurc = calculate_aurc(curve)
+    aurc = calculate_aurc(
+        curve
+    )
 
-    optimal_aurc = calculate_optimal_aurc(correctness)
+    optimal_aurc = (
+        calculate_optimal_aurc(
+            correctness
+        )
+    )
 
-    random_aurc = calculate_random_aurc(correctness)
+    random_aurc = (
+        calculate_random_aurc(
+            correctness
+        )
+    )
 
-    normalized_aurc = calculate_normalized_aurc(
-        aurc=aurc,
-        optimal_aurc=optimal_aurc,
-        random_aurc=random_aurc
+    normalized_aurc = (
+        calculate_normalized_aurc(
+            aurc=aurc,
+            optimal_aurc=(
+                optimal_aurc
+            ),
+            random_aurc=(
+                random_aurc
+            ),
+        )
     )
 
     result = MethodResult(
-        method=method_name,
-        score_field=score_field_description,
-        available_records=sum(math.isfinite(score) for score in scores),
-        total_records=total,
-        full_accuracy=sum(correctness) / total,
+        method=(
+            method_name
+        ),
+        score_field=(
+            score_field_description
+        ),
+        available_records=sum(
+            math.isfinite(
+                score
+            )
+            for score
+            in scores
+        ),
+        total_records=(
+            total
+        ),
+        full_accuracy=(
+            sum(
+                int(value)
+                for value
+                in correctness
+            )
+            / total
+        ),
         aurc=aurc,
-        normalized_aurc=normalized_aurc,
-        matched_coverage=matched_metrics
+        normalized_aurc=(
+            normalized_aurc
+        ),
+        matched_coverage=(
+            matched_metrics
+        ),
     )
 
-    return result, curve
+    return (
+        result,
+        curve,
+    )
 
 
-# create output folder -> define CSV columns -> loop through each method -> loop through its coverage metrics -> write each result as one CSV row
 def save_matched_coverage_csv(
-    results: Sequence[MethodResult],
+    results: Sequence[
+        MethodResult
+    ],
     path: str | Path,
 ) -> None:
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    """
+    Save matched-coverage metrics for every evaluated method.
+    """
+
+    output_path = Path(
+        path
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     field_names = [
         "method",
@@ -776,47 +1635,63 @@ def save_matched_coverage_csv(
         "correct_answered",
         "abstained",
         "correct_abstained",
-        "incorrect_abstained"
+        "incorrect_abstained",
     ]
 
     with output_path.open(
         "w",
         encoding="utf-8",
-        newline=""
+        newline="",
     ) as output_file:
         writer = csv.DictWriter(
             output_file,
-            fieldnames=field_names,
+            fieldnames=(
+                field_names
+            ),
             lineterminator="\n",
         )
 
         writer.writeheader()
 
         for result in results:
-            for metric in result.matched_coverage:
+            for metric in (
+                result.matched_coverage
+            ):
                 writer.writerow(
                     {
-                        "method": result.method,
-                        **asdict(metric)
+                        "method": (
+                            result.method
+                        ),
+                        **asdict(
+                            metric
+                        ),
                     }
                 )
 
 
-
-# create output folder -> define summary columns -> write one CSV row for each method.
 def save_summary_csv(
-    results: Sequence[MethodResult],
-    path: str | Path
+    results: Sequence[
+        MethodResult
+    ],
+    path: str | Path,
 ) -> None:
-    """Save one summary row per method."""
+    """
+    Save one aggregate summary row per ranking method.
+    """
 
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path = Path(
+        path
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     with output_path.open(
         "w",
         encoding="utf-8",
-        newline=""
+        newline="",
     ) as output_file:
         writer = csv.DictWriter(
             output_file,
@@ -826,7 +1701,7 @@ def save_summary_csv(
                 "total_records",
                 "full_accuracy",
                 "aurc",
-                "normalized_aurc"
+                "normalized_aurc",
             ],
             lineterminator="\n",
         )
@@ -836,32 +1711,57 @@ def save_summary_csv(
         for result in results:
             writer.writerow(
                 {
-                    "method": result.method,
-                    "score_field": result.score_field,
-                    "total_records": result.total_records,
-                    "full_accuracy": result.full_accuracy,
-                    "aurc": result.aurc,
-                    "normalized_aurc": result.normalized_aurc
+                    "method": (
+                        result.method
+                    ),
+                    "score_field": (
+                        result.score_field
+                    ),
+                    "total_records": (
+                        result.total_records
+                    ),
+                    "full_accuracy": (
+                        result.full_accuracy
+                    ),
+                    "aurc": (
+                        result.aurc
+                    ),
+                    "normalized_aurc": (
+                        result.normalized_aurc
+                    ),
                 }
             )
 
 
-# create output folder -> loop through each method -> loop through every point in its risk-coverage curve -> save all points to CSV
 def save_curve_csv(
     curves: dict[
         str,
-        list[dict[str, float | int]]
+        list[
+            dict[
+                str,
+                float | int,
+            ]
+        ],
     ],
-    path: str | Path
+    path: str | Path,
 ) -> None:
+    """
+    Save every point from every risk-coverage curve.
+    """
 
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path = Path(
+        path
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     with output_path.open(
         "w",
         encoding="utf-8",
-        newline=""
+        newline="",
     ) as output_file:
         writer = csv.DictWriter(
             output_file,
@@ -871,90 +1771,177 @@ def save_curve_csv(
                 "coverage",
                 "selective_accuracy",
                 "risk",
-                "wrong_answered"
+                "wrong_answered",
             ],
             lineterminator="\n",
         )
 
         writer.writeheader()
 
-        for method_name, curve in curves.items():
+        for (
+            method_name,
+            curve,
+        ) in curves.items():
             for point in curve:
                 writer.writerow(
                     {
-                        "method": method_name,
-                        **point
+                        "method": (
+                            method_name
+                        ),
+                        **point,
                     }
                 )
 
 
-
-# take each method's curve -> plot coverage on x-axis and risk on y-axis -> add labels/legend -> save the figure as an image.
 def plot_risk_coverage_curves(
     curves: dict[
         str,
-        list[dict[str, float | int]]
+        list[
+            dict[
+                str,
+                float | int,
+            ]
+        ],
     ],
-    path: str | Path
+    path: str | Path,
 ) -> None:
-    figure = plt.figure(figsize=(9, 6))
+    """
+    Plot and save risk against coverage for all evaluated methods.
+    """
 
-    axis = figure.add_subplot(111)
+    figure = plt.figure(
+        figsize=(9, 6)
+    )
 
-    for method_name, curve in curves.items():
+    axis = (
+        figure.add_subplot(
+            111
+        )
+    )
+
+    for (
+        method_name,
+        curve,
+    ) in curves.items():
         axis.plot(
-            [float(point["coverage"]) for point in curve],
-            [float(point["risk"]) for point in curve],
-            label=method_name
+            [
+                float(
+                    point[
+                        "coverage"
+                    ]
+                )
+                for point
+                in curve
+            ],
+            [
+                float(
+                    point[
+                        "risk"
+                    ]
+                )
+                for point
+                in curve
+            ],
+            label=(
+                method_name
+            ),
         )
 
-    axis.set_xlabel("Coverage")
-    axis.set_ylabel("Selective risk")
-    axis.set_title("Question-Aware Verification Ablation")
+    axis.set_xlabel(
+        "Coverage"
+    )
 
-    axis.set_xlim(0.0, 1.0)
-    axis.set_ylim(bottom=0.0)
-    axis.grid(True, alpha=0.3)
+    axis.set_ylabel(
+        "Selective risk"
+    )
+
+    axis.set_title(
+        "Question-Aware Verification Ablation"
+    )
+
+    axis.set_xlim(
+        0.0,
+        1.0,
+    )
+
+    axis.set_ylim(
+        bottom=0.0
+    )
+
+    axis.grid(
+        True,
+        alpha=0.3,
+    )
+
     axis.legend()
 
     figure.tight_layout()
 
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path = Path(
+        path
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     figure.savefig(
         output_path,
         dpi=200,
-        bbox_inches="tight"
+        bbox_inches="tight",
     )
 
-    plt.close(figure)
+    plt.close(
+        figure
+    )
 
 
-
-# sort methods by AURC -> print their main metrics -> make it easy to see which method performs best.
 def print_summary(
-    results: Sequence[MethodResult]
+    results: Sequence[
+        MethodResult
+    ],
 ) -> None:
-    """Print the main ablation summary."""
+    """
+    Print methods ordered from lowest to highest AURC.
+    """
 
-    print("\n" + "=" * 88)
+    print(
+        "\n"
+        + "=" * 88
+    )
 
-    print("QUESTION-AWARE ABLATION SUMMARY")
+    print(
+        "QUESTION-AWARE ABLATION SUMMARY"
+    )
 
-    print("=" * 88)
+    print(
+        "=" * 88
+    )
 
-    print(f"{'Method':<42}{'AURC':>12}{'Norm. AURC':>16}{'Full Acc.':>14}")
+    print(
+        f"{'Method':<42}"
+        f"{'AURC':>12}"
+        f"{'Norm. AURC':>16}"
+        f"{'Full Acc.':>14}"
+    )
 
-    print("-" * 88)
+    print(
+        "-" * 88
+    )
 
     for result in sorted(
         results,
-        key=lambda item: item.aurc
+        key=lambda item: (
+            item.aurc
+        ),
     ):
         normalized_text = (
             f"{result.normalized_aurc:.6f}"
-            if result.normalized_aurc is not None
+            if (
+                result.normalized_aurc
+                is not None
+            )
             else "N/A"
         )
 
@@ -965,55 +1952,99 @@ def print_summary(
             f"{result.full_accuracy:>14.4f}"
         )
 
-    print("\nLower AURC is better.")
+    print(
+        "\nLower AURC is better."
+    )
 
 
-
-# for each coverage target -> find every method’s matching metrics -> sort methods by lowest risk -> print risk, accuracy, wrong answers, and answered count.
 def print_matched_coverage(
-    results: Sequence[MethodResult]
+    results: Sequence[
+        MethodResult
+    ],
 ) -> None:
-    coverage_levels = [
-        metric.requested_coverage for metric in results[0].matched_coverage
-    ]
+    """
+    Print method risk comparisons at identical requested coverage levels.
+    """
 
-    print("\n" + "=" * 88)
-
-    print("MATCHED-COVERAGE RISK")
-
-    print("=" * 88)
-
-    for coverage in coverage_levels:
-        print(f"\nCoverage target: {coverage:.0%}")
-
-        print(
-            f"{'Method':<42}{'Risk':>10}{'Accuracy':>12}{'Wrong':>10}{'Answered':>12}"
+    if not results:
+        raise ValueError(
+            "No method results are available."
         )
 
-        print("-" * 88)
+    coverage_levels = [
+        metric.requested_coverage
+        for metric
+        in results[
+            0
+        ].matched_coverage
+    ]
 
-        rows: list[tuple[str, SelectiveMetrics]] = []
+    print(
+        "\n"
+        + "=" * 88
+    )
+
+    print(
+        "MATCHED-COVERAGE RISK"
+    )
+
+    print(
+        "=" * 88
+    )
+
+    for coverage in (
+        coverage_levels
+    ):
+        print(
+            "\nCoverage target: "
+            f"{coverage:.0%}"
+        )
+
+        print(
+            f"{'Method':<42}"
+            f"{'Risk':>10}"
+            f"{'Accuracy':>12}"
+            f"{'Wrong':>10}"
+            f"{'Answered':>12}"
+        )
+
+        print(
+            "-" * 88
+        )
+
+        rows: list[
+            tuple[
+                str,
+                SelectiveMetrics,
+            ]
+        ] = []
 
         for result in results:
             metric = next(
                 item
-                for item in result.matched_coverage
+                for item
+                in result.matched_coverage
                 if math.isclose(
                     item.requested_coverage,
-                    coverage
+                    coverage,
                 )
             )
 
             rows.append(
                 (
                     result.method,
-                    metric
+                    metric,
                 )
             )
 
-        for method_name, metric in sorted(
+        for (
+            method_name,
+            metric,
+        ) in sorted(
             rows,
-            key=lambda item: item[1].risk
+            key=lambda item: (
+                item[1].risk
+            ),
         ):
             print(
                 f"{method_name:<42}"
@@ -1024,184 +2055,275 @@ def print_matched_coverage(
             )
 
 
-
-# split input by commas -> convert to floats -> validate range -> remove duplicates -> sort -> return tuple.
 def parse_coverage_levels(
-    raw_value: str
-) -> tuple[float, ...]:
-    values: list[float] = []
+    raw_value: str,
+) -> tuple[
+    float,
+    ...,
+]:
+    """
+    Parse comma-separated coverage levels from the command line.
+    """
 
-    for item in raw_value.split(","):
-        stripped_item = item.strip()
+    values: list[
+        float
+    ] = []
+
+    for item in raw_value.split(
+        ","
+    ):
+        stripped_item = (
+            item.strip()
+        )
 
         if not stripped_item:
             continue
 
-        value = float(stripped_item)
+        try:
+            value = float(
+                stripped_item
+            )
 
-        if not 0.0 < value <= 1.0:
-            raise argparse.ArgumentTypeError("Coverage values must be in (0, 1].")
+        except ValueError as error:
+            raise argparse.ArgumentTypeError(
+                "Invalid coverage value: "
+                f"{stripped_item!r}."
+            ) from error
 
-        values.append(value)
+        if (
+            not math.isfinite(
+                value
+            )
+            or not (
+                0.0
+                < value
+                <= 1.0
+            )
+        ):
+            raise argparse.ArgumentTypeError(
+                "Coverage values must be "
+                "finite and lie in (0, 1]."
+            )
+
+        values.append(
+            value
+        )
 
     if not values:
-        raise argparse.ArgumentTypeError("At least one coverage value is required.")
+        raise argparse.ArgumentTypeError(
+            "At least one coverage value "
+            "is required."
+        )
 
-    return tuple(sorted(set(values)))
+    return tuple(
+        sorted(
+            set(
+                values
+            )
+        )
+    )
 
 
+def validate_required_question_aware_fields(
+    records: Sequence[
+        dict[
+            str,
+            Any,
+        ]
+    ],
+) -> None:
+    """
+    Require a usable claim-validity value for every V2 record.
+    """
 
-# load records -> infer correctness -> find usable score fields -> build confidence/lexical/semantic/combined methods -> evaluate each method -> compare AURC and matched coverage -> save CSV/JSON/plot outputs -> print results.
+    for index, record in enumerate(
+        records,
+        start=1,
+    ):
+        value = get_first_value(
+            record,
+            QUESTION_AWARE_VALIDITY_FIELDS,
+            default=None,
+        )
+
+        if value is None:
+            raise ValueError(
+                f"Record {index} does not "
+                "contain qa_claim_valid."
+            )
+
+        if (
+            coerce_boolean(
+                value
+            )
+            is None
+        ):
+            raise ValueError(
+                f"Record {index} has invalid "
+                "qa_claim_valid value: "
+                f"{value!r}."
+            )
+
+
 def evaluate_ablation(
     input_path: str | Path,
     output_directory: str | Path,
     coverage_levels: Sequence[float],
-) -> list[MethodResult]:
-    records = load_jsonl(input_path)
+) -> list[
+    MethodResult
+]:
+    """
+    Run the complete score-ranking ablation evaluation.
+
+    Required canonical signals:
+
+    - calibrated confidence
+    - question-aware V2 entailment
+    - question-aware V2 claim validity
+    - self-verification score
+
+    Optional lexical and earlier semantic methods are added only when complete
+    compatible score fields exist.
+    """
+
+    records = load_jsonl(
+        input_path
+    )
+
+    validated_coverage_levels = (
+        validate_coverage_levels(
+            coverage_levels
+        )
+    )
 
     correctness = [
-        infer_correctness(record)
-        for record in records
+        infer_correctness(
+            record
+        )
+        for record
+        in records
     ]
 
-    # ---------------------------------------------------------
-    # Detect available score fields
-    # ---------------------------------------------------------
-
-    confidence_field = find_available_field(
-        records,
-        CONFIDENCE_FIELDS,
-    )
-
-    lexical_field = find_available_field(
-        records,
-        LEXICAL_SCORE_FIELDS,
-    )
-
-    old_semantic_field = find_available_field(
-        records,
-        OLD_SEMANTIC_SCORE_FIELDS,
-    )
-
-    question_aware_field = find_available_field(
-        records,
-        QUESTION_AWARE_SCORE_FIELDS,
-    )
-
-    self_verification_field = find_available_field(
-        records,
-        SELF_VERIFICATION_SCORE_FIELDS,
-    )
-
-    # ---------------------------------------------------------
-    # Validate required fields
-    # ---------------------------------------------------------
-
-    if confidence_field is None:
-        raise ValueError(
-            "No confidence score field was found. "
-            f"Checked: {CONFIDENCE_FIELDS}"
+    confidence_field = (
+        find_calibrated_confidence_field(
+            records
         )
+    )
+
+    lexical_field = (
+        find_available_field(
+            records,
+            LEXICAL_SCORE_FIELDS,
+        )
+    )
+
+    old_semantic_field = (
+        find_available_field(
+            records,
+            OLD_SEMANTIC_SCORE_FIELDS,
+        )
+    )
+
+    question_aware_field = (
+        find_available_field(
+            records,
+            QUESTION_AWARE_SCORE_FIELDS,
+        )
+    )
+
+    self_verification_field = (
+        find_available_field(
+            records,
+            SELF_VERIFICATION_SCORE_FIELDS,
+        )
+    )
 
     if question_aware_field is None:
         raise ValueError(
-            "No question-aware entailment field was found. "
-            f"Checked: {QUESTION_AWARE_SCORE_FIELDS}"
+            "No question-aware entailment "
+            "field was found. "
+            f"Checked: "
+            f"{QUESTION_AWARE_SCORE_FIELDS}"
         )
 
     if self_verification_field is None:
         raise ValueError(
-            "No self-verification score field was found. "
-            f"Checked: {SELF_VERIFICATION_SCORE_FIELDS}"
+            "No self-verification score "
+            "field was found. "
+            f"Checked: "
+            f"{SELF_VERIFICATION_SCORE_FIELDS}"
         )
 
-    # ---------------------------------------------------------
-    # Confidence scores
-    # ---------------------------------------------------------
+    validate_required_question_aware_fields(
+        records
+    )
 
-    confidence_scores_optional = [
-        extract_numeric_score(
-            record,
-            confidence_field,
+    confidence_scores = (
+        extract_complete_probability_scores(
+            records=records,
+            field_name=(
+                confidence_field
+            ),
+            signal_name=(
+                "Calibrated confidence"
+            ),
         )
-        for record in records
-    ]
-
-    if any(
-        score is None
-        for score in confidence_scores_optional
-    ):
-        missing_count = sum(
-            score is None
-            for score in confidence_scores_optional
-        )
-
-        raise ValueError(
-            f"Confidence field '{confidence_field}' is missing "
-            f"or non-numeric in {missing_count} records."
-        )
-
-    confidence_scores = [
-        float(score)
-        for score in confidence_scores_optional
-        if score is not None
-    ]
-
-    # ---------------------------------------------------------
-    # Question-aware semantic V2 scores
-    # ---------------------------------------------------------
+    )
 
     question_aware_scores = [
         extract_question_aware_score(
             record,
             question_aware_field,
         )
-        for record in records
+        for record
+        in records
     ]
-
-    # ---------------------------------------------------------
-    # Self-verification scores
-    # ---------------------------------------------------------
 
     self_verification_scores_optional = [
         extract_self_verification_score(
             record,
             self_verification_field,
         )
-        for record in records
+        for record
+        in records
     ]
 
     if any(
         score is None
-        for score in self_verification_scores_optional
+        for score
+        in self_verification_scores_optional
     ):
         missing_count = sum(
             score is None
-            for score in self_verification_scores_optional
+            for score
+            in self_verification_scores_optional
         )
 
         raise ValueError(
-            f"Self-verification field "
-            f"'{self_verification_field}' is missing "
-            f"or non-numeric in {missing_count} records."
+            "Self-verification field "
+            f"{self_verification_field!r} "
+            "is missing or non-numeric in "
+            f"{missing_count} records."
         )
 
     self_verification_scores = [
-        float(score)
-        for score in self_verification_scores_optional
+        float(
+            score
+        )
+        for score
+        in self_verification_scores_optional
         if score is not None
     ]
-
-    # ---------------------------------------------------------
-    # Combined scores
-    # ---------------------------------------------------------
 
     confidence_question_aware_scores = [
         geometric_mean_score(
             confidence_score,
             semantic_score,
         )
-        for confidence_score, semantic_score in zip(
+        for (
+            confidence_score,
+            semantic_score,
+        ) in zip(
             confidence_scores,
             question_aware_scores,
         )
@@ -1212,21 +2334,22 @@ def evaluate_ablation(
             confidence_score,
             self_score,
         )
-        for confidence_score, self_score in zip(
+        for (
+            confidence_score,
+            self_score,
+        ) in zip(
             confidence_scores,
             self_verification_scores,
         )
     ]
 
-    # ---------------------------------------------------------
-    # Main methods
-    # ---------------------------------------------------------
-
     methods: list[
         tuple[
             str,
             str,
-            list[float],
+            list[
+                float
+            ],
         ]
     ] = [
         (
@@ -1254,7 +2377,7 @@ def evaluate_ablation(
         (
             "Self-verifier only",
             (
-                f"normalized("
+                "normalized("
                 f"{self_verification_field})"
             ),
             self_verification_scores,
@@ -1262,38 +2385,36 @@ def evaluate_ablation(
         (
             "Confidence + self-verifier",
             (
-                f"sqrt("
-                f"{confidence_field} * "
-                f"normalized({self_verification_field})"
-                f")"
+                f"sqrt({confidence_field} * "
+                "normalized("
+                f"{self_verification_field}))"
             ),
             confidence_self_scores,
         ),
     ]
 
-    # ---------------------------------------------------------
-    # Optional lexical verifier
-    # ---------------------------------------------------------
-
     if lexical_field is not None:
-        lexical_scores_optional = [
-            extract_numeric_score(
-                record,
-                lexical_field,
+        try:
+            lexical_scores = (
+                extract_complete_probability_scores(
+                    records=records,
+                    field_name=(
+                        lexical_field
+                    ),
+                    signal_name=(
+                        "Lexical verifier"
+                    ),
+                )
             )
-            for record in records
-        ]
 
-        if all(
-            score is not None
-            for score in lexical_scores_optional
-        ):
-            lexical_scores = [
-                float(score)
-                for score in lexical_scores_optional
-                if score is not None
-            ]
+        except ValueError:
+            print(
+                "Skipping lexical verifier: "
+                f"field {lexical_field!r} "
+                "is incomplete or invalid."
+            )
 
+        else:
             methods.insert(
                 1,
                 (
@@ -1303,46 +2424,53 @@ def evaluate_ablation(
                 ),
             )
 
-        else:
-            print(
-                "Skipping lexical verifier: "
-                f"field '{lexical_field}' is incomplete."
-            )
-
-    # ---------------------------------------------------------
-    # Optional old semantic verifier
-    # ---------------------------------------------------------
-
     if old_semantic_field is not None:
-        if old_semantic_field == question_aware_field:
+        if (
+            old_semantic_field
+            == question_aware_field
+        ):
             print(
-                "Skipping old semantic verifier because its "
-                "detected field is identical to the "
-                "question-aware field."
+                "Skipping old semantic verifier "
+                "because its detected field is "
+                "identical to the question-aware "
+                "field."
             )
 
         else:
-            old_semantic_scores_optional = [
-                extract_numeric_score(
-                    record,
-                    old_semantic_field,
+            try:
+                old_semantic_scores = (
+                    extract_complete_probability_scores(
+                        records=records,
+                        field_name=(
+                            old_semantic_field
+                        ),
+                        signal_name=(
+                            "Old semantic verifier"
+                        ),
+                    )
                 )
-                for record in records
-            ]
 
-            if all(
-                score is not None
-                for score in old_semantic_scores_optional
-            ):
-                old_semantic_scores = [
-                    float(score)
-                    for score in old_semantic_scores_optional
-                    if score is not None
-                ]
+            except ValueError:
+                print(
+                    "Skipping old semantic verifier: "
+                    f"field {old_semantic_field!r} "
+                    "is incomplete or invalid."
+                )
+
+            else:
+                lexical_present = any(
+                    method_name
+                    == "Lexical verifier only"
+                    for (
+                        method_name,
+                        _,
+                        _,
+                    ) in methods
+                )
 
                 insertion_index = (
                     2
-                    if lexical_field is not None
+                    if lexical_present
                     else 1
                 )
 
@@ -1355,22 +2483,18 @@ def evaluate_ablation(
                     ),
                 )
 
-            else:
-                print(
-                    "Skipping old semantic verifier: "
-                    f"field '{old_semantic_field}' "
-                    "is incomplete."
-                )
-
-    # ---------------------------------------------------------
-    # Evaluate every method
-    # ---------------------------------------------------------
-
-    results: list[MethodResult] = []
+    results: list[
+        MethodResult
+    ] = []
 
     curves: dict[
         str,
-        list[dict[str, float | int]],
+        list[
+            dict[
+                str,
+                float | int,
+            ]
+        ],
     ] = {}
 
     for (
@@ -1378,22 +2502,32 @@ def evaluate_ablation(
         field_description,
         scores,
     ) in methods:
-
-        result, curve = evaluate_method(
-            method_name=method_name,
-            score_field_description=field_description,
-            correctness=correctness,
+        (
+            result,
+            curve,
+        ) = evaluate_method(
+            method_name=(
+                method_name
+            ),
+            score_field_description=(
+                field_description
+            ),
+            correctness=(
+                correctness
+            ),
             scores=scores,
-            coverage_levels=coverage_levels,
+            coverage_levels=(
+                validated_coverage_levels
+            ),
         )
 
-        results.append(result)
+        results.append(
+            result
+        )
 
-        curves[method_name] = curve
-
-    # ---------------------------------------------------------
-    # Output directory
-    # ---------------------------------------------------------
+        curves[
+            method_name
+        ] = curve
 
     output_directory_path = Path(
         output_directory
@@ -1404,72 +2538,84 @@ def evaluate_ablation(
         exist_ok=True,
     )
 
-    # ---------------------------------------------------------
-    # Summary JSON
-    # ---------------------------------------------------------
+    correct_predictions = sum(
+        int(value)
+        for value
+        in correctness
+    )
 
     summary_payload = {
-        "input_path": str(input_path),
-
-        "total_records": len(records),
-
-        "correct_predictions": sum(correctness),
-
+        "input_path": str(
+            input_path
+        ),
+        "total_records": (
+            len(records)
+        ),
+        "correct_predictions": (
+            correct_predictions
+        ),
         "incorrect_predictions": (
             len(correctness)
-            - sum(correctness)
+            - correct_predictions
         ),
-
         "full_accuracy": (
-            sum(correctness)
+            correct_predictions
             / len(correctness)
         ),
-
         "detected_fields": {
-            "confidence": confidence_field,
-            "lexical": lexical_field,
-            "old_semantic": old_semantic_field,
-            "question_aware_semantic": question_aware_field,
-            "self_verification": self_verification_field,
+            "confidence": (
+                confidence_field
+            ),
+            "lexical": (
+                lexical_field
+            ),
+            "old_semantic": (
+                old_semantic_field
+            ),
+            "question_aware_semantic": (
+                question_aware_field
+            ),
+            "self_verification": (
+                self_verification_field
+            ),
         },
-
         "combination_rules": {
             "confidence_question_aware": (
                 "equal-weight geometric mean: "
-                "sqrt(confidence * qa_entailment)"
+                "sqrt(confidence * "
+                "qa_entailment)"
             ),
-
             "confidence_self_verification": (
                 "equal-weight geometric mean: "
-                "sqrt(confidence * normalized_self_verification)"
+                "sqrt(confidence * "
+                "normalized_self_verification)"
             ),
         },
-
         "self_verification_normalization": (
-            "self_verification_score [-1, 1] "
-            "mapped linearly to [0, 1]"
+            "self_verification_score "
+            "[-1, 1] mapped linearly "
+            "to [0, 1]"
         ),
-
         "invalid_claim_policy": (
             "qa semantic score = 0.0"
         ),
-
         "methods": [
             {
-                **asdict(result),
-
+                **asdict(
+                    result
+                ),
                 "matched_coverage": [
-                    asdict(metric)
-                    for metric in result.matched_coverage
+                    asdict(
+                        metric
+                    )
+                    for metric
+                    in result.matched_coverage
                 ],
             }
-            for result in results
+            for result
+            in results
         ],
     }
-
-    # ---------------------------------------------------------
-    # Save outputs
-    # ---------------------------------------------------------
 
     save_json(
         summary_payload,
@@ -1501,86 +2647,103 @@ def evaluate_ablation(
         / "risk_coverage_curves.png",
     )
 
-    # ---------------------------------------------------------
-    # Terminal output
-    # ---------------------------------------------------------
+    print_summary(
+        results
+    )
 
-    print_summary(results)
-
-    print_matched_coverage(results)
-
-    print("\n" + "=" * 88)
-
-    print("OUTPUT FILES")
-
-    print("=" * 88)
-
-    print(
-        output_directory_path
-        / "ablation_summary.json"
+    print_matched_coverage(
+        results
     )
 
     print(
-        output_directory_path
-        / "ablation_summary.csv"
+        "\n"
+        + "=" * 88
     )
 
     print(
-        output_directory_path
-        / "matched_coverage.csv"
+        "OUTPUT FILES"
     )
 
     print(
-        output_directory_path
-        / "risk_coverage_curves.csv"
+        "=" * 88
     )
 
-    print(
-        output_directory_path
-        / "risk_coverage_curves.png"
-    )
+    for output_name in (
+        "ablation_summary.json",
+        "ablation_summary.csv",
+        "matched_coverage.csv",
+        "risk_coverage_curves.csv",
+        "risk_coverage_curves.png",
+    ):
+        print(
+            output_directory_path
+            / output_name
+        )
 
     return results
 
 
 def parse_arguments() -> argparse.Namespace:
+    """
+    Parse score-ranking ablation evaluation settings.
+    """
+
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate confidence, lexical evidence, old semantic "
-            "evidence, and question-aware semantic evidence using "
-            "risk-coverage and matched-coverage analysis."
+            "Evaluate confidence and verifier "
+            "ranking signals using risk-coverage, "
+            "AURC, and matched-coverage analysis."
         )
     )
 
     parser.add_argument(
         "--input",
-        default=str(DEFAULT_INPUT_PATH),
-        help="Input JSONL predictions."
+        default=str(
+            DEFAULT_INPUT_PATH
+        ),
+        help=(
+            "Input JSONL predictions."
+        ),
     )
 
     parser.add_argument(
         "--output-dir",
-        default=str(DEFAULT_OUTPUT_DIRECTORY),
-        help="Directory for evaluation outputs."
+        default=str(
+            DEFAULT_OUTPUT_DIRECTORY
+        ),
+        help=(
+            "Directory for evaluation outputs."
+        ),
     )
 
     parser.add_argument(
         "--coverage-levels",
         type=parse_coverage_levels,
-        default=DEFAULT_COVERAGE_LEVELS,
+        default=(
+            DEFAULT_COVERAGE_LEVELS
+        ),
         help=(
-            "Comma-separated matched coverage levels. Example: 0.1,0.2,0.3,0.4,0.5,1.0"
-        )
+            "Comma-separated matched coverage "
+            "levels, e.g. 0.1,0.2,0.5,1.0."
+        ),
     )
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    arguments = parse_arguments()
+    arguments = (
+        parse_arguments()
+    )
 
     evaluate_ablation(
-        input_path=arguments.input,
-        output_directory=arguments.output_dir,
-        coverage_levels=arguments.coverage_levels
+        input_path=(
+            arguments.input
+        ),
+        output_directory=(
+            arguments.output_dir
+        ),
+        coverage_levels=(
+            arguments.coverage_levels
+        ),
     )

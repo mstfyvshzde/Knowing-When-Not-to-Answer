@@ -1,5 +1,21 @@
 """
-This file uses an independent QA model to verify the original model's answers, classify them as SUPPORTED, UNSUPPORTED, or UNCERTAIN, and save the verification results for later decision-making.
+Verify forced-answer QA predictions using a secondary extractive QA model.
+
+The verifier receives the same question and context as the original QA model
+and independently produces its own answer or native no-answer prediction.
+
+The original answer and verifier output are compared using token-overlap F1
+together with the verifier's pipeline score.
+
+Each prediction is assigned one heuristic evidence label:
+
+- SUPPORTED: verifier gives a sufficiently confident matching answer
+- UNSUPPORTED: verifier confidently gives no answer or a strongly different answer
+- UNCERTAIN: verifier evidence is not decisive
+
+This is a prototype evidence-checking heuristic. Agreement between two QA
+models should not be interpreted as proof that an answer is factually correct,
+and disagreement does not necessarily mean logical contradiction.
 """
 
 import argparse
@@ -14,8 +30,10 @@ from transformers import pipeline
 
 from src.utils.io import load_jsonl, save_jsonl
 
-# It names the independent QA model used to check the original model’s answer.
-# We need it so the system can compare the original answer with a second model’s answer and judge whether the evidence supports it.
+# Use a different pretrained extractive QA backbone as a secondary verifier.
+# Keeping it separate from the main RoBERTa QA model provides an additional
+# model-based signal, although the two systems should not be treated as
+# statistically independent evidence sources.
 VERIFIER_MODEL_NAME = "deepset/deberta-v3-base-squad2"
 
 
@@ -24,8 +42,18 @@ DEFAULT_INPUT_PATH = Path("outputs/predictions/raw_baseline_calibration.jsonl")
 OUTPUT_PATH = Path("outputs/predictions/evidence_verified_calibration.jsonl")
 
 
-# converts answers into a clean, standardized format so they can be compared fairly, even if they have different capitalization, punctuation, articles, or spacing._
-def normalize_answe(text: str) -> str:
+
+def normalize_answer(text: str) -> str:
+    """
+    Normalize answer text before lexical overlap comparison.
+
+    Text is lowercased, punctuation and English articles are removed, and
+    repeated whitespace is collapsed.
+
+    This reduces superficial differences such as capitalization or punctuation
+    before comparing the two QA answers.
+    """
+
     text = text.lower()
 
     # This block removes punctuation from the text.
@@ -43,15 +71,24 @@ def normalize_answe(text: str) -> str:
     return " ".join(text.split())
 
 
-# measures how similar two answers are by comparing their words and returns an F1 similarity score between 0 and 1.
 def answer_overlap_f1(first_answer: str, second_answer: str) -> float:
-    # The model’s answer is the answer produced by your main QA system first
-    first_tokens = normalize_answe(first_answer).split()
+    """
+    Measure token-level overlap between the original and verifier answers.
 
-    # the verifier model’s answer is a second, independent answer generated from the same question and context to check whether it agrees.
-    second_tokens = normalize_answe(second_answer).split()
+    Precision measures how much of the original answer overlaps with the
+    verifier answer, while recall measures how much of the verifier answer is
+    covered by the original answer.
 
-    if not first_answer or not second_answer:
+    The resulting F1 score lies between 0 and 1:
+
+    1.0 -> complete normalized token overlap
+    0.0 -> no normalized token overlap
+    """
+
+    first_tokens = normalize_answer(first_answer).split()
+    second_tokens = normalize_answer(second_answer).split()
+
+    if not first_tokens or not second_tokens:
         return 0.0
 
     common_tokens = Counter(first_tokens) & Counter(second_tokens)
@@ -72,8 +109,15 @@ def answer_overlap_f1(first_answer: str, second_answer: str) -> float:
     return f1_score
 
 
-# it checks whether the requested device is available and returns the correct torch.device for efficiency
 def select_device(device_name: str) -> torch.device:
+    """
+    Select the hardware device used for verifier inference.
+
+    CUDA refers to NVIDIA GPU execution, while MPS is Apple's GPU backend.
+    If the requested accelerator is unavailable, an error is raised instead of
+    silently changing the experiment hardware.
+    """
+
     if device_name == "mps":
         if not torch.backends.mps.is_available():
             raise RuntimeError("MPS was requested but is not available.")
@@ -89,22 +133,42 @@ def select_device(device_name: str) -> torch.device:
     return torch.device("cpu")
 
 
-# decides whether the generated answer is SUPPORTED, UNSUPPORTED, or UNCERTAIN by comparing it with the verifier model’s answer and confidence score.
-def classify_evdence(
+def classify_evidence(
     generated_answer: str,
     verifier_answer: str,
     verifier_score: float,
     support_threshold: float,
     match_threshold: float,
-    contradiction_threshold: float,
+    rejection_threshold: float,
 ) -> tuple[str, str, float]:
+    """
+    Convert verifier output into a heuristic evidence label.
+
+    The decision combines two signals:
+
+    1. lexical answer agreement measured by token-overlap F1
+    2. the secondary QA model's own pipeline score
+
+    SUPPORTED requires both strong answer overlap and sufficient verifier score.
+
+    UNSUPPORTED is used when the verifier confidently predicts no answer or
+    confidently produces a substantially different answer.
+
+    Otherwise the result is UNCERTAIN.
+
+    These labels describe agreement between QA systems; they are not formal
+    logical entailment or contradiction judgments.
+    """
+
+    LOW_MATCH_THRESHOLD = 0.20
+
     answer_match = answer_overlap_f1(generated_answer, verifier_answer)
 
     # verifier_answer -> The answer given by the verifier model.
     if not verifier_answer.strip():
         # verifier_score -> how confident the verifier model is in its own answer.
-        # contradiction_threshold -> The minimum verifier confidence needed to strongly reject the generated answer as unsupported.
-        if verifier_score >= contradiction_threshold:
+        # rejection_threshold -> The minimum verifier confidence needed to strongly reject the generated answer as unsupported.
+        if verifier_score >= rejection_threshold:
             return (
                 "UNSUPPORTED",
                 (
@@ -133,7 +197,10 @@ def classify_evdence(
             answer_match,
         )
 
-    if answer_match < 0.20 and verifier_score >= contradiction_threshold:
+    if (
+        answer_match < LOW_MATCH_THRESHOLD
+        and verifier_score >= rejection_threshold
+    ):
         return (
             "UNSUPPORTED",
             "Independent verifier confidently produced a different answer.",
@@ -147,14 +214,24 @@ def classify_evdence(
     )
 
 
-# uses an independent verifier model to check every generated answer, classify the evidence, and return the updated predictions with verification results.
 def verify_predictions(
     predictions: list[dict[str, Any]],
     device_name: str = "cpu",
     support_threshold: float = 0.30,
     match_threshold: float = 0.80,
-    contradiction_threshold: float = 0.50,
+    rejection_threshold: float = 0.50,
 ) -> list[dict[str, Any]]:
+    """
+    Run the secondary QA verifier over stored forced-answer predictions.
+
+    For every example, the verifier receives the original question and context.
+    Native no-answer behavior remains enabled so the verifier may either return
+    an answer span or indicate that the context does not support an answer.
+
+    Its output is then compared with the original forced answer and attached to
+    the prediction as prototype evidence metadata.
+    """
+
     device = select_device(device_name)
 
     print(f"Loading verifier model: {VERIFIER_MODEL_NAME}")
@@ -177,24 +254,31 @@ def verify_predictions(
 
         generated_answer = prediction["prediction_text"]
 
-        # top_k=1 -> Return only the single best answer.
-        # handle_impossible_answer=True -> Allow the model to return no answer if the context does not contain one.
+
+        # Keep only the verifier's highest-ranked outcome and allow its native
+        # SQuAD v2 no-answer option. Unlike the original forced-answer baseline,
+        # this verifier is therefore allowed to return an empty answer.
         verifier_result = verifier(
-            question=question, context=context, top_k=1, handle_impossible_answer=True
+            question=question,
+            context=context,
+            top_k=1,
+            handle_impossible_answer=True
         )
 
-        verifier_answer = str(verifier_result["answer"])
+        verifier_answer = str(verifier_result["answer"]).strip()
         verifier_score = float(verifier_result["score"])
 
-        evidence_label, evidence_reason, answer_match = classify_evdence(
+        evidence_label, evidence_reason, answer_match = classify_evidence(
             generated_answer=generated_answer,
             verifier_answer=verifier_answer,
             verifier_score=verifier_score,
             support_threshold=support_threshold,
             match_threshold=match_threshold,
-            contradiction_threshold=contradiction_threshold,
+            rejection_threshold=rejection_threshold,
         )
 
+        # Preserve the original prediction and attach the secondary verifier output,
+        # lexical agreement score, and resulting heuristic evidence label.
         verified_prediction = prediction.copy()
 
         verified_prediction.update(
@@ -219,7 +303,7 @@ def verify_predictions(
 
         print(f"Verifier answer: {verifier_answer or '[NO ANSWER]'}")
 
-        print(f"Verifier score: {verifier_score:.4f}")
+        print(f"Verifier pipeline score: {verifier_score:.4f}")
 
         print(f"Answer match F1: {answer_match:.4f}")
 
@@ -228,10 +312,16 @@ def verify_predictions(
     return verified_predictions
 
 
-# counts how many predictions are SUPPORTED, UNSUPPORTED, and UNCERTAIN, then calculates their rates.
 def summarize_evidence(
     predictions: list[dict[str, Any]],
 ) -> dict[str, int | float]:
+    """
+    Count SUPPORTED, UNSUPPORTED, and UNCERTAIN verifier outcomes.
+
+    The returned rates describe the distribution of heuristic evidence labels
+    and should not be interpreted directly as prediction accuracy.
+    """
+
     total = len(predictions)
 
     if total == 0:
@@ -258,10 +348,19 @@ def summarize_evidence(
     }
 
 
-# runs the complete evidence checking pipeline: it loads predictions, verifies them with the verifier model, saves the results, prints a summary, and returns the verified predictions.
 def run_evidence_checker(
-    input_path: str | Path, output_path: str | Path, device_name: str
+    input_path: str | Path,
+    output_path: str | Path,
+    device_name: str,
 ) -> list[dict[str, Any]]:
+    """
+    Run the complete secondary-QA evidence-checking workflow.
+
+    The function loads forced-answer predictions, verifies them with the
+    secondary QA model, attaches evidence metadata, saves the enriched records,
+    and reports the distribution of evidence labels.
+    """
+
     predictions = load_jsonl(input_path)
 
     missing_context = any("context" not in prediction for prediction in predictions)
@@ -295,12 +394,10 @@ def run_evidence_checker(
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Terminal argümanlarını okur.
-    """
+    """Parse evidence-verifier paths and inference-device settings."""
 
     parser = argparse.ArgumentParser(
-        description=("Verify generated answers using an independent QA model.")
+        description="Verify forced answers using a secondary QA model."
     )
 
     parser.add_argument("--input", default=str(DEFAULT_INPUT_PATH))

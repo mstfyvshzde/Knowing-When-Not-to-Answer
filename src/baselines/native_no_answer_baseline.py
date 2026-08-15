@@ -1,32 +1,29 @@
 """
-The main purpose of this file is to run the model native SQuAD 2.0 no-answer baseline, allowing the QA model to return an empty answer when it predicts that the question is unanswerable.
-It loads a selected dataset split, runs the RoBERTa SQuAD 2.0 model on each example, stores the predicted answer, confidence, reference answers, and metadata, then saves all predictions as a JSONL file for later evaluation and comparison.
+Run the model's native SQuAD v2 no-answer baseline.
+
+Unlike the forced-answer baseline, this baseline keeps the pretrained QA
+model's built-in ability to return an empty answer when it predicts that the
+context does not support an answer.
+
+The resulting ANSWER or ABSTAIN decisions are saved with prediction scores,
+reference answers, answerability labels, and experiment metadata for later
+evaluation and comparison.
 """
 
-# argparse is used to read command-line arguments when you run the script from the terminal.
+
 import argparse
-
-# is used to create and manage file paths safely.
 from pathlib import Path
-
-# Any is a flexible type hint that allows a variable or dictionary value to contain any Python data type.
 from typing import Any
 
-# is the main PyTorch library used for tensor operations and running neural-network models.
 import torch
-
-# Dataset represents one dataset split, such as only train.
-# DatasetDict represents several splits together, such as train, calibration, and test.
-# load_from_disk loads a dataset that was previously saved locally.
 from datasets import Dataset, DatasetDict, load_from_disk
-
-# creates a ready-to-use Transformers task pipeline, such as question answering, without manually writing the full model and tokenizer inference code.
 from transformers import pipeline
 
 from src.utils.io import save_jsonl
 
-# stores the Hugging Face model identifier that the QA pipeline will load.
-# Here, it selects a RoBERTa model trained for SQuAD 2.0, so it can answer questions and also handle unanswerable ones.
+# Use the same pretrained extractive QA backbone (ana soru-cevap modeli) as
+# the forced-answer baseline. Keeping the model fixed makes the comparison
+# focus on abstention behavior rather than differences between QA models.
 MODEL_NAME = "deepset/roberta-base-squad2"
 
 
@@ -35,26 +32,39 @@ DATASET_PATH = Path("data/processed/squad_v2")
 OUTPUT_DIR = Path("outputs/predictions")
 
 
-# chooses which hardware PyTorch should use:
-# We need it so the model runs on the best available hardware instead of always using the CPU. A GPU can make inference much faster, while the availability checks prevent the program from requesting hardware that does not exist.
 def select_device(device_name: str) -> torch.device:
+    """
+    Select the hardware device used for QA inference.
+
+    CUDA refers to NVIDIA GPU execution, while MPS is Apple's GPU backend.
+    If the requested accelerator is unavailable, an error is raised instead of
+    silently changing the experiment hardware.
+    """
+
     if device_name == "cuda":
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA was requested but isnt avalable yet")
+            raise RuntimeError("CUDA was requested but is not available.")
 
         return torch.device("cuda")
 
     if device_name == "mps":
         if not torch.backends.mps.is_available():
-            raise RuntimeError("MPS was requested but is not available yet")
+            raise RuntimeError("MPS was requested but is not available.")
 
         return torch.device("mps")
 
     return torch.device("cpu")
 
 
-# loads the prepared dataset from disk, checks that it has the expected structure, verifies that the requested split exists, and returns only that split.
+
 def load_split(split_name: str) -> Dataset:
+    """
+    Load one split from the processed SQuAD v2 dataset.
+
+    A split (veri bölümü) is one of train, calibration, or test. Explicit split
+    selection helps keep calibration data separate from held-out evaluation data.
+    """
+
     if not DATASET_PATH.exists():
         raise FileNotFoundError(
             f"Processed dataset not found at: {DATASET_PATH}\n"
@@ -74,24 +84,43 @@ def load_split(split_name: str) -> Dataset:
     return dataset[split_name]
 
 
-# extracts all correct answer texts from one dataset example and returns them as a list of strings.
-# For an unanswerable example, it returns an empty list.
 def build_reference_answers(example: dict[str, Any]) -> list[str]:
+    """
+    Run the QA model with its native no-answer mechanism enabled.
+
+    Native no-answer (modelin kendi cevap vermeme mekanizması) allows the
+    SQuAD v2 model to choose between returning an extractive answer span and
+    predicting that no valid answer exists in the context.
+
+    A non-empty prediction becomes ANSWER, while an empty prediction becomes
+    ABSTAIN.
+
+    Because this baseline uses the same QA backbone as the forced-answer setup,
+    it shows how well the model's built-in abstention behavior performs without
+    the project's additional selective-ranking methods.
+    """
+
     answers = example.get("answers", {})
 
     return list(answers.get("text", []))
 
 
-# runs the basic question-answering model on a selected dataset split and saves all predictions as a JSONL file.
-# It loads the split, optionally limits the number of examples, selects CPU/GPU, generates one answer for each question, stores the prediction details, and always uses the decision "ANSWER" without abstaining.
 def run_native_no_answer_baseline(
     split_name: str = "calibration", limit: int | None = 10, device_name: str = "cpu"
 ) -> list[dict[str, Any]]:
-    # loads only the requested dataset split, such as "calibration" or "test".
+    """
+    Run the QA backbone with its native no-answer behavior enabled.
+
+    An empty model prediction is interpreted as ABSTAIN; a non-empty span is
+    interpreted as ANSWER. This provides a direct comparison with the
+    project's forced-answer selective-ranking setup.
+    """
+
+    # Load only the requested experimental split.
     dataset = load_split(split_name)
 
-    # limit means the maximum number of dataset examples the function will process.
-    # For example, limit=10 processes only the first 10 examples; limit=None processes the entire selected split.
+    # Optionally restrict the number of examples for a smoke test (hızlı sistem
+    # kontrolü) or debugging. limit=None processes the complete selected split.
     if limit is not None:
         if limit <= 0:
             raise ValueError("limit must be greater than zero.")
@@ -104,16 +133,21 @@ def run_native_no_answer_baseline(
     print(f"Using device: {device}")
     print(f"Number of examples: {len(dataset)}")
 
-    # creates a ready-to-use Hugging Face question-answering system.
+    # Build the same pretrained QA pipeline used by the forced-answer baseline.
+    # The important experimental difference appears below, where the model's
+    # native impossible-answer option is enabled.
     qa_model = pipeline(
         task="question-answering", model=MODEL_NAME, tokenizer=MODEL_NAME, device=device
     )
 
-    # creates an empty list that will store one prediction dictionary for each dataset example.
+    # Store one structured prediction record for every processed example.
     predictions: list[dict[str, Any]] = []
 
-    # loops through every dataset example and also gives each one a visible number starting from 1.
     for index, example in enumerate(dataset, start=1):
+        # handle_impossible_answer=True enables the model's native null/no-answer
+        # option. Unlike the forced-answer baseline, the model is therefore allowed
+        # to decide that the context does not contain a valid answer.
+        # top_k=1 keeps only the model's highest-scoring final choice.
         result = qa_model(
             question=example["question"],
             context=example["context"],
@@ -121,13 +155,21 @@ def run_native_no_answer_baseline(
             handle_impossible_answer=True,
         )
 
+        # Normalize the Hugging Face output to one prediction dictionary.
         if isinstance(result, list):
             result = result[0]
 
+        # In this pipeline, the native null/no-answer decision is represented by an
+        # empty answer string. We map that model output to the project's ABSTAIN label.
         prediction_text = str(result["answer"]).strip()
         decision = "ANSWER" if prediction_text else "ABSTAIN"
 
-        # This is one prediction record stored as a Python dictionary. It collects everything about one question, the model’s answer, and the experiment setup.
+
+        # Store the model output together with experiment metadata required for later# evaluation.
+        # pipeline_score is the Hugging Face score of the model's selected native
+        # outcome. That outcome may represent either an answer span or the null/no-answer
+        # choice, so this score should not be confused with the calibrated confidence
+        # used by the project's selective-ranking experiments.
         prediction = {
             # unique example ID.
             "id": example["id"],
@@ -161,11 +203,13 @@ def run_native_no_answer_baseline(
 
         print(f"\nExample {index}/{len(dataset)}")
         print(f"Question: {example['question']}")
-        print(f"Prediction: {prediction_text}")
+        print(f"Pipeline score: {result['score']:.4f}")
         print(f"Confidence: {result['score']:.4f}")
         print(f"Answerable: {example['is_answerable']}")
         print(f"Decision: {decision}")
 
+    # Keep native no-answer outputs separate from forced-answer predictions so the
+    # two experimental baselines can be evaluated independently.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     output_path = OUTPUT_DIR / f"native_no_answer_baseline_{split_name}.jsonl"
@@ -177,11 +221,11 @@ def run_native_no_answer_baseline(
     return predictions
 
 
-# reads options given from the terminal and converts them into a Python object.
-# It lets the user choose the dataset split, number of examples, and device without changing the code.
 def parse_arguments() -> argparse.Namespace:
+    """Parse command-line options for split, sample limit, and inference device."""
+
     parser = argparse.ArgumentParser(
-        description=("Run the native SQuAD2 no-answer baseline.")
+        description="Run the native SQuAD v2 no-answer baseline."
     )
 
     parser.add_argument(

@@ -1,27 +1,35 @@
 """
-Confidence estimation from question-answering model logits.
+Estimate QA confidence from answer-vs-null logits.
 
-Bu dosyanın görevi:
-1. Raw baseline prediction'larını okumak.
-2. Question + context'i doğrudan QA modeline vermek.
-3. Raw cevabın start ve end logit skorlarını bulmak.
-4. Modelin "cevap yok" skorunu hesaplamak.
-5. Answer-vs-null margin üretmek.
-6. Bu margin'i 0–1 aralığında uncalibrated confidence'a çevirmek.
+This module reconstructs a confidence signal for each forced-answer prediction
+using the same pretrained SQuAD v2 QA backbone.
 
-Önemli:
-Bu dosyanın ürettiği confidence henüz calibrated değildir.
+For each prediction, it:
 
-Yani:
-    confidence = 0.80
+1. tokenizes the original question and context,
+2. locates the forced-answer span in model token space,
+3. computes the answer-span logit score,
+4. computes the model's null/no-answer logit score,
+5. forms an answer-vs-null margin,
+6. maps that margin into [0, 1] with a sigmoid.
 
-doğrudan:
-    cevap %80 ihtimalle doğrudur
+The core signal is:
 
-anlamına gelmez.
+    answer_score = start_logit(answer_start) + end_logit(answer_end)
 
-Daha sonra calibration split üzerinde temperature scaling
-veya başka bir calibration yöntemi uygulayacağız.
+    null_score = start_logit(CLS) + end_logit(CLS)
+
+    answer_null_margin = answer_score - null_score
+
+A positive margin means the forced answer is favored over the null option,
+while a negative margin means the model favors no-answer more strongly.
+
+The sigmoid output produced here is an uncalibrated confidence
+(kalibre edilmemiş güven skoru). A value such as 0.80 must not yet be
+interpreted as an 80% probability of correctness.
+
+Temperature scaling is fitted later on the calibration split to improve that
+probabilistic interpretation.
 """
 
 import argparse
@@ -34,42 +42,36 @@ from transformers import AutoModelForQuestionAnswering, AutoTokenizer
 
 from src.utils.io import load_jsonl, save_jsonl
 
-# Raw baseline'da kullandığımız aynı QA modeli.
+# Use the same pretrained QA backbone as the forced-answer baseline so the
+# confidence signal is derived from the model that produced the answer.
 MODEL_NAME = "deepset/roberta-base-squad2"
 
-# Raw baseline prediction dosyası.
-DEFAULT_INPUT_PATH = Path("outputs/predictions/raw_baseline_calibration.jsonl")
+DEFAULT_INPUT_PATH = Path(
+    "outputs/predictions/raw_baseline_calibration.jsonl"
+)
 
-# Confidence eklenmiş prediction dosyası.
 DEFAULT_OUTPUT_PATH = Path(
     "outputs/predictions/raw_baseline_with_confidence_calibration.jsonl"
 )
 
 
-# Modelin tek seferde işleyebileceği toplam maksimum token sayısıdır.
-# Bu sayı; soru, context ve özel tokenları birlikte kapsar.
+# Maximum number of tokens processed in one QA feature, including the question,
+# context portion, and special tokens.
 MAX_LENGTH = 384
 
-# Uzun bir context parçalara ayrıldığında, ardışık parçalar arasında
-# kaç tokenın tekrar kullanılacağını belirtir.
-# Böylece cevap iki parçanın sınırında kalırsa bilgi kaybolmaz.
+# Long contexts are split into overlapping chunks. The stride (örtüşme miktarı)
+# reuses 128 tokens between neighboring chunks so an answer near a chunk
+# boundary is less likely to be lost.
 DOCUMENT_STRIDE = 128
-
-# Context çok uzunsa tokenizer onu parçalara ayırır. İlk parça 384 tokena kadar işlenir. Sonraki parça, önceki parçanın son **128 tokenını tekrar içerir**. Böylece parçalar arasında bağlantı korunur ve sınırdaki cevabın kaçırılma ihtimali azalır.
 
 
 def select_device(device_name: str) -> torch.device:
     """
-    Modelin çalışacağı cihazı seçer.
+    Select the hardware device used for QA inference.
 
-    cpu:
-        Normal işlemci.
-
-    mps:
-        Apple Silicon GPU.
-
-    cuda:
-        NVIDIA GPU.
+    CUDA refers to NVIDIA GPU execution, while MPS is Apple's GPU backend.
+    If the requested accelerator is unavailable, an error is raised instead of
+    silently changing the experiment hardware.
     """
 
     if device_name == "mps":
@@ -87,21 +89,18 @@ def select_device(device_name: str) -> torch.device:
     return torch.device("cpu")
 
 
+
 def sigmoid(value: float) -> float:
     """
-    Herhangi bir sayıyı 0–1 aralığına dönüştürür.
+    Map an answer-vs-null logit margin into the interval [0, 1].
 
-    Büyük pozitif margin:
-        confidence 1'e yaklaşır.
+    Large positive margins approach 1.0, large negative margins approach 0.0,
+    and a margin of zero maps to 0.5.
 
-    Büyük negatif margin:
-        confidence 0'a yaklaşır.
-
-    Margin 0:
-        confidence 0.5 olur.
+    This numerical transformation does not by itself make the result a calibrated
+    probability of correctness.
     """
 
-    # Büyük negatif değerlerde math.exp taşmasını önler.
     if value >= 0:
         return 1.0 / (1.0 + math.exp(-value))
 
@@ -112,14 +111,12 @@ def sigmoid(value: float) -> float:
 
 def find_cls_index(input_ids: torch.Tensor, cls_token_id: int) -> int:
     """
-    Input içindeki CLS token pozisyonunu bulur.
+    Find the CLS token position in one tokenized QA feature.
 
-    SQuAD 2.0 modellerinde CLS token genellikle
-    "no answer" seçeneğini temsil eder.
+    For this SQuAD v2 QA model, the CLS position is used as the null/no-answer
+    position. Its start and end logits therefore provide the model's null score.
     """
 
-    # .nonzero() koşulun True olduğu indeksleri döndürür.
-    # Burada input_ids == cls_token_id sonucu True/False üretir; .nonzero() ise CLS tokenının bulunduğu konumları verir.
     positions = (input_ids == cls_token_id).nonzero(as_tuple=False)
 
     if len(positions) == 0:
@@ -128,62 +125,40 @@ def find_cls_index(input_ids: torch.Tensor, cls_token_id: int) -> int:
     return int(positions[0].item())
 
 
-# Karakter konumunu token konumuna çevirir.
-# text = "Ali Bakü'de yaşıyor"
-# answer = "Bakü"
-# answer_start = 4
-# answer_end = 8
-# "Ali"  -> token 0
-# "Bakü" -> token 1
-# Burada "Bakü" cevabı karakter olarak 4–8 aralığındadır.
 def find_answer_token_span(
-    offsets: list[list[int]],  # offset, tokenın metindeki karakter aralığını;
-    sequence_ids: list[
-        int | None
-    ],  # sequence_id ise tokenın soru mu, context mi olduğunu gösterir.
+    offsets: list[list[int]],
+    sequence_ids: list[int | None],
     answer_start: int,
     answer_end: int,
 ) -> tuple[int, int] | None:
     """
-    Character-level answer span'ını token span'ına çevirir.
+    Map a character-level answer span to token indices inside one QA chunk.
 
-    Raw baseline bize şunu verir:
+    The forced-answer pipeline stores answer boundaries as character positions in
+    the original context, but the QA model produces logits for token positions.
 
-        start = cevabın context içindeki başlangıç karakteri
-        end   = cevabın context içindeki bitiş karakteri
+    offsets map each token back to its character interval, while sequence_ids
+    identify whether a token belongs to the question, context, or special tokens.
 
-    QA modeli ise token pozisyonlarıyla çalışır.
-
-    Bu fonksiyon:
-        character span -> token span
-
-    dönüşümünü yapar.
+    Only context tokens are considered.
 
     Returns:
-        (start_token_index, end_token_index)
-
-    Cevap bu chunk içinde değilse:
-        None
+        (start_token_index, end_token_index) when the complete answer is present
+        inside this chunk, otherwise None.
     """
 
     token_start: int | None = None
     token_end: int | None = None
 
     for token_index, (offset, sequence_id) in enumerate(zip(offsets, sequence_ids)):
-        # sequence_id == 1 context token'ını gösterir.
-        # Question ve special tokenları kullanmıyoruz.
+        # sequence_id == 1 identifies context tokens. Question and special tokens
+        # cannot represent the extracted answer span.
         if sequence_id != 1:
             continue
 
         offset_start, offset_end = offset
 
-        #         if sequence_id != 1:
-        #             continue
-
-        #         offset_start, offset_end = offset
-
-        # Special veya padding tokenlarında offset [0, 0]
-        # olabilir.
+        # Special or padding tokens may have an empty [0, 0] offset.
         if offset_start == offset_end:
             continue
 
@@ -202,28 +177,34 @@ def find_answer_token_span(
     return token_start, token_end
 
 
+
+
 def estimate_single_confidence(
     prediction: dict[str, Any], tokenizer: Any, model: Any, device: torch.device
 ) -> dict[str, Any]:
     """
-    Tek bir raw prediction için confidence signal üretir.
+    Estimate the answer-vs-null confidence signal for one forced-answer prediction.
 
-    Core fikir:
+    The forced-answer prediction provides a character-level answer span. This
+    function runs the same QA model again to recover the logits associated with
+    that span and with the model's null/no-answer position.
 
-        answer score =
-            start logit + end logit
+    For each relevant chunk:
 
-        null score =
-            CLS start logit + CLS end logit
+    answer_score =
+        start_logit(answer_start_token) + end_logit(answer_end_token)
 
-        margin =
-            answer score - null score
+    null_score =
+        start_logit(CLS) + end_logit(CLS)
 
-    Margin pozitifse:
-        model answer'ı null seçeneğine tercih ediyor.
+    Across overlapping chunks, the strongest representation of the forced answer
+    and the strongest evidence against the null option are retained.
 
-    Margin negatifse:
-        model "cevap yok" seçeneğine daha yakın.
+    The final uncertainty signal is:
+
+    answer_null_margin = best_answer_score - best_null_score
+
+    The margin is then passed through sigmoid to obtain an uncalibrated confidence.
     """
 
     required_fields = [
@@ -252,84 +233,65 @@ def estimate_single_confidence(
     # Chunk 1: Ali Bakü'de yaşıyor ve
     # Chunk 2: yaşıyor ve üniversiteye gidiyor
 
-    # encoded, tokenizer’ın ürettiği model girdilerinin tamamıdır; yani token ID’leri, attention mask ve offset bilgileri burada tutulur.
+    # Split long contexts into overlapping QA features while preserving character
+    # offsets so the raw answer span can later be mapped back to model tokens.
     encoded = tokenizer(
-        question,  # question soru metnidir,
-        context,  #  context ise cevabın aranacağı metindir.
-        truncation="only_second",  # truncation="only_second": Uzunluk aşılırsa yalnızca ikinci metni, yani contexti kısaltır; soru korunur.
-        max_length=MAX_LENGTH,  # max_length=MAX_LENGTH: Her chunk’ın maksimum token sayısını belirler.
-        stride=DOCUMENT_STRIDE,  # stride=DOCUMENT_STRIDE: Chunk’lar arasındaki ortak token miktarıdır.
-        return_overflowing_tokens=True,  # return_overflowing_tokens=True: Uzun context’i birden fazla overlapping chunk’a böler.
-        return_offsets_mapping=True,  # return_offsets_mapping=True: Her tokenın metindeki karakter başlangıç-bitiş konumunu verir.
-        padding=True,  # padding=True: Kısa chunk’ları aynı uzunluğa tamamlar.
-        return_tensors="pt",  # return_tensors="pt": Sonuçları PyTorch tensoru olarak döndürür.
+        question,
+        context,
+        truncation="only_second",
+        max_length=MAX_LENGTH,
+        stride=DOCUMENT_STRIDE,
+        return_overflowing_tokens=True,
+        return_offsets_mapping=True,
+        padding=True,
+        return_tensors="pt",
     )
 
-    # Offset mapping model input'u değildir.
-    # Yalnızca token-character eşleştirmesi için kullanılır.
+    # Offset mappings are needed only for character-to-token alignment and are not
+    # valid model inputs.
     offset_mapping = encoded.pop("offset_mapping")
 
-    # Uzun context kaç chunk’a bölündüyse, her chunk’ın hangi örneğe ait olduğunu gösteren mapping’i siler. Burada tek örnek olduğu için gereksizdir.
-    encoded.pop(
-        "overflow_to_sample_mapping",
-        None,
-    )
+    # This function processes one original example at a time, so the tokenizer's
+    # overflow-to-sample mapping is unnecessary after chunk creation.
+    encoded.pop("overflow_to_sample_mapping", None)
 
-    # Her chunk’taki tokenların:
-    # 0 -> soruya,
-    # 1 -> context’e,
-    # None → special tokenlara ait olduğunu kaydeder.
+    # Record which tokens belong to the question, context, or special-token region
+    # for every overlapping chunk.
     all_sequence_ids = [
         encoded.sequence_ids(chunk_index)
         for chunk_index in range(encoded["input_ids"].shape[0])
     ]
 
-    # Şuna benzer bir sözlük döndürür:
-    # {
-    #     "input_ids": tensor(...),
-    #     "attention_mask": tensor(...),
-    #     "token_type_ids": tensor(...)
-    # }
+
     model_inputs = {key: value.to(device) for key, value in encoded.items()}
 
-    # Inference sırasında gradient hesaplamıyoruz. Inference, eğitilmiş modelin yeni bir veri üzerinde tahmin yapmasıdır.
-    # torch.no_grad() gradient hesaplamayı kapatır; model(**model_inputs) ise girdileri modele verip start_logits ve end_logits gibi tahmin sonuçlarını outputs içine koyar.
+
+    # Confidence extraction is inference only. Gradients are unnecessary because
+    # the pretrained QA model is not being trained or fine-tuned here.
     with torch.no_grad():
         outputs = model(**model_inputs)
 
-    # Model outputları:
-    # [chunk_count, sequence_length]
-    # Modelin başlangıç skorlarını alır, gradient bağlantısını keser (detach) ve CPU’ya taşır (cpu).
+    # Move logits and alignment information to CPU for deterministic bookkeeping
+    # and Python-side span calculations.
     start_logits = outputs.start_logits.detach().cpu()
-
-    # end_logits: Cevabın hangi tokenda biteceğine ait skorları alır, gradient bağlantısını keser ve CPU’ya taşır.
     end_logits = outputs.end_logits.detach().cpu()
-
-    # input_ids: Token ID’lerini alır, gradient bağlantısını keser ve CPU’ya taşır.
     input_ids = encoded["input_ids"].detach().cpu()
-
-    # offset_by_chunk: Her tokenın karakter aralığını alır, CPU’ya taşır ve Python listesine çevirir.
     offset_by_chunk = offset_mapping.detach().cpu().tolist()
 
-    # Aynı answer span'i overlapping birden fazla chunk içinde bulunabilir.
     answer_scores: list[float] = []
-
-    # Her chunk için no-answer skoru hesaplanacak.
     null_scores: list[float] = []
 
-    selected_span: tuple[int, int] | None = (
-        None  # Span, metindeki bir parçanın başlangıç ve bitiş aralığıdır.
-    )
+    selected_span: tuple[int, int] | None = None
     selected_chunk: int | None = None
+    selected_answer_score = -math.inf
 
     for chunk_index in range(input_ids.shape[0]):
         cls_index = find_cls_index(
             input_ids=input_ids[chunk_index], cls_token_id=tokenizer.cls_token_id
         )
 
-        # No-answer skoru:
-        # CLS token'ın start ve end logit toplamı.
-        # QA modeli cevabın başlangıç ve bitiş konumlarını ayrı ayrı tahmin eder. Bu nedenle bir cevabın toplam skoru, başlangıç ve bitiş logitlerinin toplanmasıyla hesaplanır. “Cevap yok” durumunda model hem başlangıç hem de bitiş için `CLS` tokenını seçtiği için `null_score`, `CLS start logit + CLS end logit` şeklinde bulunur.
+        # For SQuAD v2, selecting CLS for both start and end represents the null
+        # prediction. Their summed logits form this chunk's no-answer score.
         null_score = float(
             start_logits[chunk_index, cls_index].item()
             + end_logits[chunk_index, cls_index].item()
@@ -338,9 +300,7 @@ def estimate_single_confidence(
         null_scores.append(null_score)
 
         token_span = find_answer_token_span(
-            offsets=offset_by_chunk[  # Offset, bir tokenın metinde başladığı ve bittiği karakter konumudur.
-                chunk_index
-            ],
+            offsets=offset_by_chunk[chunk_index],
             sequence_ids=all_sequence_ids[chunk_index],
             answer_start=answer_start,
             answer_end=answer_end,
@@ -360,13 +320,13 @@ def estimate_single_confidence(
 
         answer_scores.append(answer_score)
 
-        # Aynı cevap birden fazla chunk'ta varsa
-        # en güçlü span'i kaydediyoruz.
-        if selected_chunk is None or answer_score > max(
-            answer_scores[:-1], default=math.inf
-        ):
+        # The same character span may appear in multiple overlapping chunks.
+        # Keep the chunk where that span receives its highest model logit score.
+        if answer_score > selected_answer_score:
+            selected_answer_score = answer_score
             selected_chunk = chunk_index
             selected_span = (token_start, token_end)
+
 
     if not answer_scores:
         raise ValueError(
@@ -378,47 +338,38 @@ def estimate_single_confidence(
     if not null_scores:
         raise ValueError("No null scores were produced.")
 
-    # answer_scores için max alınır; çünkü yüksek logit, modelin cevaba daha çok güvendiğini gösterir. Yani en güçlü cevap seçilir.
+    # The forced answer may occur in several overlapping chunks. Use its highest
+    # observed span score as the strongest model support for that answer.
     best_answer_score = max(answer_scores)
 
-    # null_scores için min alınır; çünkü düşük null skoru, modelin “cevap yok” seçeneğine daha az güvendiğini gösterir. Böylece cevabın bulunduğu en uygun chunk esas alınır.
+    # Following the SQuAD-style multi-feature setup, use the lowest null score
+    # observed across chunks as the strongest feature-level evidence against
+    # the no-answer option.
     best_null_score = min(null_scores)
 
-    # CORE UNCERTAINTY SIGNAL
-    # Pozitif:
-    # answer, no-answer'dan güçlü.
-    #
-    # Negatif:
-    # no-answer daha güçlü.
-    answer_null_margon = best_answer_score - best_null_score
+    # Core uncertainty signal:
+    # positive margin -> forced answer is stronger than the null option
+    # negative margin -> null/no-answer option is stronger
+    answer_null_margin = best_answer_score - best_null_score
 
-    # null, modelin “cevap yok” seçeneğine verdiği skordur.
-    # margin ise cevap skoru ile null skoru arasındaki farktır:
-    # Margin pozitifse cevap var, negatifse model cevap yok seçeneğine daha yakındır.
-    uncalibrated_confidence = sigmoid(answer_null_margon)
+    # Sigmoid makes the margin easier to use on a [0, 1] scale, but this value is
+    # still uncalibrated and must not yet be interpreted as correctness probability.
+    uncalibrated_confidence = sigmoid(answer_null_margin)
 
+    # Preserve the original forced-answer record and attach the uncertainty signal
+    # together with provenance needed by later calibration stages.
     updated_prediction = prediction.copy()
 
-    # confidence_token_span: Cevabın başlangıç ve bitiş token indeksleri.
     updated_prediction.update(
         {
-            # answer_span_logit: Modelin seçilen cevaba verdiği en yüksek skor.
-            "answer_span_logit": (best_answer_score),
-            # null_logit: Modelin “cevap yok” seçeneğine verdiği skor.
+            "answer_span_logit": best_answer_score,
             "null_logit": best_null_score,
-            # answer_null_margin: Cevap skoru ile null skoru arasındaki fark.
-            "answer_null_margin": (answer_null_margon),
-            # confidence: Margin’den üretilen 0–1 arası güven değeri.
-            "confidence": (uncalibrated_confidence),
-            # confidence_type: Güvenin cevap ve null karşılaştırmasından üretildiğini belirtir.
-            "confidence_type": ("uncalibrated_answer_vs_null"),
-            # confidence_is_calibrated: Güven değerinin kalibre edilip edilmediğini gösterir. Burada False.
+            "answer_null_margin": answer_null_margin,
+            "confidence": uncalibrated_confidence,
+            "confidence_type": "uncalibrated_answer_vs_null",
             "confidence_is_calibrated": False,
-            # confidence_model: Kullanılan modelin adı.
             "confidence_model": MODEL_NAME,
-            # confidence_chunk: En güçlü cevabın bulunduğu chunk’ın numarası.
             "confidence_chunk": selected_chunk,
-            # confidence_chunk: En güçlü cevabın bulunduğu chunk’ın numarası.
             "confidence_token_span": (
                 list(selected_span) if selected_span is not None else None
             ),
@@ -432,7 +383,10 @@ def estimate_confidences(
     predictions: list[dict[str, Any]], device_name: str
 ) -> list[dict[str, Any]]:
     """
-    Bütün raw prediction'lar için confidence hesaplar.
+    Estimate answer-vs-null confidence for a collection of raw QA predictions.
+
+    The tokenizer and pretrained QA model are loaded once and reused for every
+    prediction. Model weights remain frozen throughout the procedure.
     """
 
     if not predictions:
@@ -448,7 +402,8 @@ def estimate_confidences(
 
     model = AutoModelForQuestionAnswering.from_pretrained(MODEL_NAME).to(device)
 
-    # Dropout gibi training davranışlarını kapatır.
+    # Disable training-specific behavior such as dropout so repeated inference
+    # uses the model in evaluation mode.
     model.eval()
 
     updated_predictions: list[dict[str, Any]] = []
@@ -464,7 +419,7 @@ def estimate_confidences(
             f"{index}/{len(predictions)} | "
             f"margin="
             f"{updated_prediction['answer_null_margin']:.4f} | "
-            f"confidence="
+            f"uncalibrated_confidence="
             f"{updated_prediction['confidence']:.4f}"
         )
 
@@ -475,7 +430,11 @@ def run_confidence_estimator(
     input_path: str | Path, output_path: str | Path, device_name: str
 ) -> list[dict[str, Any]]:
     """
-    Confidence estimator'ın ana çalışma fonksiyonu.
+    Load forced-answer predictions, estimate confidence signals, and save them.
+
+    The resulting JSONL preserves the original QA outputs while adding the
+    answer-vs-null margin and its uncalibrated sigmoid transformation for later
+    temperature scaling.
     """
 
     predictions = load_jsonl(input_path)
@@ -492,9 +451,8 @@ def run_confidence_estimator(
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Terminal argümanlarını okur.
-    """
+    """Parse confidence-estimation paths and inference-device settings."""
+
     parser = argparse.ArgumentParser(
         description=("Estimate QA confidence from answer-vs-null logits.")
     )

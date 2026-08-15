@@ -1,46 +1,53 @@
 """
-This file manages input and output operations for the whole project.
-In simple terms, it helps the project:
-- create folders when needed
-- save Python data as JSON
-- load JSON files
-- save multiple records as JSONL
-- load JSONL records
-- save table-like data as CSV
-So instead of rewriting file-handling code in every part of the project, other files can simply import these helper functions.
+Provide shared file input/output utilities for the project.
+
+These helpers centralize the way experiment artifacts are read and written,
+so individual modules do not implement their own file-handling logic.
+
+The module supports:
+
+- JSON: one complete Python object stored in a file
+- JSONL (JSON Lines): one JSON record per line, used mainly for predictions
+- CSV: tabular experiment summaries
+
+Parent directories are created automatically before writing files.
+All text files use UTF-8 so Unicode characters are preserved consistently.
 """
 
-# Read and write CSV files.
 import csv
-
-# Convert Python objects to and from JSON.
 import json
-
-# Create and manage file paths safely across operating systems.
 from pathlib import Path
-
-# Allow a function to accept values of any data type.
 from typing import Any
 
 
-# Write a utility function that guarantees the parent directory exists before saving a file.
 def ensure_parent_directory(path: str | Path) -> Path:
-    # Converts a string path into a Path object with useful file methods.
-    file_path = Path(path)
-    main_directory = file_path.parent
+    """
+    Ensure that the parent directory of a target file exists.
 
-    main_directory.mkdir(parents=True, exist_ok=True)
+    This prevents save operations from failing when an output directory has
+    not been created yet. The original file path is returned as a Path object
+    so callers can immediately use it for writing.
+    """
+
+    file_path = Path(path)
+    parent_directory = file_path.parent
+
+    parent_directory.mkdir(parents=True, exist_ok=True)
 
     return file_path
 
 
-# Save a Python object as a JSON file.
-def save_json(data: str | Any, path: str | Path, indent: int = 4) -> None:
+def save_json(data: Any, path: str | Path, indent: int = 4) -> None:
+    """
+    Save a Python object as human-readable UTF-8 JSON.
+
+    JSON is used for structured experiment metadata and summary results where
+    the entire object is naturally stored and loaded as one document.
+    """
+
     file_path = ensure_parent_directory(path)
 
-    # Opens the file safely and automatically closes it afterwards.
     with file_path.open("w", encoding="utf-8") as file:
-        # Writes a Python object into a JSON file.
         json.dump(
             data,
             file,
@@ -51,35 +58,49 @@ def save_json(data: str | Any, path: str | Path, indent: int = 4) -> None:
         )
 
 
-# Load data from a JSON file and convert it into a Python object.
-def load_json(path: str | Path) -> object:
+def load_json(path: str | Path) -> Any:
+    """
+    Load a UTF-8 JSON file and return the decoded Python object.
+    """
     file_path = Path(path)
 
     if not file_path.exists():
         raise FileNotFoundError(f"JSON file not found: {file_path}")
 
     with file_path.open("r", encoding="utf-8") as file:
-        # Reads JSON content from an opened file and converts it into a Python object.
         data = json.load(file)
 
     return data
 
 
-# Save multiple dictionaries in JSON Lines format.
 def save_jsonl(records: list[dict[str, Any]], path: str | Path) -> None:
+    """
+    Save prediction records in JSON Lines format.
+
+    JSONL (satır-bazlı JSON) stores exactly one JSON object per line. This is
+    useful for experiment predictions because each example remains an
+    independent record and large files can be processed line by line.
+    """
+
     file_path = ensure_parent_directory(path)
 
     with file_path.open("w", encoding="utf-8") as file:
         for record in records:
-            # converts a Python dictionary into a JSON string.
-            json_line = json.dumps(record)
+            json_line = json.dumps(record, ensure_ascii=False)
             file.write(json_line + "\n")
 
 
-# This function reads a JSONL file and returns all JSON objects as Python dictionaries.
 def load_jsonl(
     path: str | Path,
 ) -> list[dict[str, Any]]:
+    """
+    Load a JSONL file as a list of prediction dictionaries.
+
+    Blank lines are ignored. Each non-empty line must contain one valid JSON
+    object. Invalid JSON reports its exact line number so corrupted experiment
+    artifacts can be diagnosed quickly.
+    """
+
     input_path = Path(path)
 
     if not input_path.exists():
@@ -94,7 +115,8 @@ def load_jsonl(
             if not stripped_line:
                 continue
 
-            # does not simply store the line. It converts a JSON string into a Python object
+            # Parse each line independently so malformed records can be reported with
+            # their exact line number.
             try:
                 record = json.loads(stripped_line)
 
@@ -114,70 +136,35 @@ def load_jsonl(
     return records
 
 
-# It converts a list of dictionaries into a CSV table.
+
 def save_csv(
     rows: list[dict[str, Any]],
     path: str | Path,
 ) -> None:
+    """
+    Save a list of dictionaries as a UTF-8 CSV table.
+
+    Dictionary keys from the first row define the CSV columns. CSV is mainly
+    used for experiment summaries that are easier to inspect as tables.
+    """
 
     if not rows:
         raise ValueError("Cannot save an empty list to CSV.")
 
     file_path = ensure_parent_directory(path)
 
-    field_names = list(rows[0].keys())
+    fieldnames = list(rows[0].keys())
 
     with file_path.open(
         "w",
         encoding="utf-8",
         newline="",
     ) as file:
-        # Creates a writer that converts dictionaries into CSV rows.
         writer = csv.DictWriter(
             file,
-            field_names=field_names,
+            fieldnames=fieldnames,
         )
 
-        # Writes column labels, not actual data.
+        # Write the header first, followed by one table row per dictionary.
         writer.writeheader()
-
-        # Writes all dictionaries as data rows.
         writer.writerows(rows)
-
-
-# It tests whether fnctions work
-if __name__ == "__main__":
-    example_predictions = [
-        {
-            "question_id": "example-1",
-            "answer": "Albert Einstein",
-            "confidence": 0.91,
-            "decision": "ANSWER",
-        },
-        {
-            "question_id": "example-2",
-            "answer": "",
-            "confidence": 0.24,
-            "decision": "ABSTAIN",
-        },
-    ]
-
-    save_json(
-        example_predictions,
-        "outputs/predictions/example.json",
-    )
-
-    save_jsonl(
-        example_predictions,
-        "outputs/predictions/example.jsonl",
-    )
-
-    save_csv(
-        example_predictions,
-        "outputs/tables/example.csv",
-    )
-
-    loaded_predictions = load_json("outputs/predictions/example.json")
-
-    print("Loaded predictions:")
-    print(loaded_predictions)

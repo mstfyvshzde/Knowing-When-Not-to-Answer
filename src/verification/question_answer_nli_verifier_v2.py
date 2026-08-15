@@ -1,25 +1,44 @@
-"""Question-aware semantic verifier V2.
+"""
+Question-aware semantic verifier V2.
 
-This implementation is dataset-independent.
+This verifier converts a question-answer pair into a declarative claim,
+validates the generated claim using dataset-independent structural checks,
+and verifies only valid claims against the source context using Natural
+Language Inference (NLI).
 
 Pipeline
 --------
-1. Convert a question-answer pair into a declarative claim.
-2. Validate the generated claim using general structural checks.
-3. Mark unreliable claims as INVALID_CLAIM.
+1. Convert question + predicted answer into a declarative claim.
+2. Validate whether the claim reliably preserves the QA information.
+3. Mark unreliable generated claims as INVALID_CLAIM.
 4. Run NLI only for valid claims.
-5. Save claim-quality and NLI fields.
+5. Store claim-quality diagnostics and NLI probabilities.
+
+The NLI model treats:
+
+    context -> premise
+    generated QA claim -> hypothesis
+
+and produces probabilities for:
+
+- ENTAILMENT
+- NEUTRAL
+- CONTRADICTION
 
 Important
 ---------
-- No dataset-specific examples are used in the generation prompt.
-- Gold/reference answers are never used.
+- No dataset-specific examples are used in the QA-to-claim input.
+- Gold/reference answers and correctness labels are never used.
 - Invalid claims are not passed to the NLI model.
+- NLI probabilities are model classification probabilities, not calibrated
+  probabilities that the original QA prediction is correct.
+- Claim generation can itself introduce errors, so claim validity is checked
+  before semantic verification.
 """
+
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import string
 from collections import Counter
@@ -34,13 +53,21 @@ from transformers import (
     AutoTokenizer,
 )
 
-DEFAULT_INPUT_PATH = Path("outputs/predictions/calibration_with_hybrid_evidence.jsonl")
+from src.utils.io import load_jsonl, save_jsonl
 
-DEFAULT_OUTPUT_PATH = Path(
-    "outputs/predictions/calibration_with_question_aware_semantic_evidence_v2.jsonl"
+DEFAULT_INPUT_PATH = Path(
+    "outputs/predictions/calibration_with_hybrid_evidence.jsonl"
 )
 
+DEFAULT_OUTPUT_PATH = Path(
+    "outputs/predictions/"
+    "calibration_with_question_aware_semantic_evidence_v2.jsonl"
+)
+
+# Specialized QA-to-declarative-statement model.
 DEFAULT_QA2D_MODEL = "domenicrosati/QA2D-t5-base"
+
+# NLI model used to compare generated claims with their source contexts.
 DEFAULT_NLI_MODEL = "FacebookAI/roberta-large-mnli"
 
 DEFAULT_BATCH_SIZE = 4
@@ -50,15 +77,19 @@ DEFAULT_GENERATION_MAX_NEW_TOKENS = 80
 
 DEFAULT_MAX_CONTEXT_TOKENS = 384
 DEFAULT_MAX_CLAIM_TOKENS = 96
+NLI_MAX_TOTAL_TOKENS = 512
 
 DEFAULT_ENTAILMENT_THRESHOLD = 0.50
 DEFAULT_CONTRADICTION_THRESHOLD = 0.50
 
+# Claim-quality requirements used before NLI inference.
 DEFAULT_MIN_ANSWER_TOKEN_COVERAGE = 0.80
 DEFAULT_MIN_CLAIM_TOKEN_COUNT = 4
 DEFAULT_MAX_QUESTION_COPY_RATIO = 0.98
 
 
+# Common prefixes suggesting that generated text is still phrased as a
+# question rather than as the declarative claim required by NLI.
 QUESTION_PREFIXES = (
     "what ",
     "who ",
@@ -86,6 +117,7 @@ QUESTION_PREFIXES = (
     "had ",
 )
 
+# Common low-information words ignored by some lexical claim-quality checks.
 STOPWORDS = {
     "a",
     "an",
@@ -129,80 +161,17 @@ STOPWORDS = {
 }
 
 
-def load_jsonl(
-    path: str | Path,
-) -> list[dict[str, Any]]:
-    """Load records from a JSONL file."""
-
-    input_path = Path(path)
-
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file does not exist: {input_path}")
-
-    records: list[dict[str, Any]] = []
-
-    with input_path.open(
-        "r",
-        encoding="utf-8",
-    ) as input_file:
-        for line_number, line in enumerate(
-            input_file,
-            start=1,
-        ):
-            stripped_line = line.strip()
-
-            if not stripped_line:
-                continue
-
-            try:
-                record = json.loads(stripped_line)
-
-            except json.JSONDecodeError as error:
-                raise ValueError(
-                    f"Invalid JSON at line {line_number} in {input_path}: {error}"
-                ) from error
-
-            if not isinstance(record, dict):
-                raise TypeError(f"Line {line_number} must contain a JSON object.")
-
-            records.append(record)
-
-    return records
-
-
-def save_jsonl(
-    records: Iterable[dict[str, Any]],
-    path: str | Path,
-) -> None:
-    """Save records to a JSONL file."""
-
-    output_path = Path(path)
-
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    with output_path.open(
-        "w",
-        encoding="utf-8",
-    ) as output_file:
-        for record in records:
-            output_file.write(
-                json.dumps(
-                    record,
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-
-
 def get_first_value(
     record: dict[str, Any],
     field_names: tuple[str, ...],
     default: Any = None,
 ) -> Any:
-    """Return the first available non-None field."""
+    """
+    Return the first available non-None value from a group of field aliases.
+
+    Earlier pipeline stages may store equivalent information under slightly
+    different field names, so aliases are checked from left to right.
+    """
 
     for field_name in field_names:
         value = record.get(field_name)
@@ -213,10 +182,12 @@ def get_first_value(
     return default
 
 
-def clean_text(
-    text: str,
-) -> str:
-    """Normalize whitespace."""
+def clean_text(text: str) -> str:
+    """
+    Normalize whitespace without changing the textual content.
+
+    Repeated spaces, tabs, and line breaks are collapsed into one space.
+    """
 
     return re.sub(
         r"\s+",
@@ -225,10 +196,8 @@ def clean_text(
     ).strip()
 
 
-def get_question(
-    record: dict[str, Any],
-) -> str:
-    """Extract the question."""
+def get_question(record: dict[str, Any]) -> str:
+    """Extract and clean the question from one prediction record."""
 
     value = get_first_value(
         record=record,
@@ -243,10 +212,8 @@ def get_question(
     return clean_text(str(value))
 
 
-def get_predicted_answer(
-    record: dict[str, Any],
-) -> str:
-    """Extract the predicted answer."""
+def get_predicted_answer(record: dict[str, Any]) -> str:
+    """Extract and clean the predicted QA answer from one record."""
 
     value = get_first_value(
         record=record,
@@ -262,10 +229,8 @@ def get_predicted_answer(
     return clean_text(str(value))
 
 
-def get_context(
-    record: dict[str, Any],
-) -> str:
-    """Extract the evidence context."""
+def get_context(record: dict[str, Any]) -> str:
+    """Extract and clean the evidence context from one prediction record."""
 
     value = get_first_value(
         record=record,
@@ -281,10 +246,13 @@ def get_context(
     return clean_text(str(value))
 
 
-def normalize_for_comparison(
-    text: str,
-) -> str:
-    """Normalize text for lexical comparison."""
+def normalize_for_comparison(text: str) -> str:
+    """
+    Normalize text for lexical claim-quality comparisons.
+
+    Text is lowercased, punctuation is replaced with spaces, and repeated
+    whitespace is collapsed.
+    """
 
     normalized_text = clean_text(text).lower()
 
@@ -300,20 +268,32 @@ def tokenize_text(
     text: str,
     remove_stopwords: bool = False,
 ) -> list[str]:
-    """Tokenize normalized text."""
+    """
+    Convert normalized text into lexical tokens.
+
+    Stop words can optionally be removed when the comparison should emphasize
+    content-bearing words rather than common grammatical words.
+    """
 
     tokens = normalize_for_comparison(text).split()
 
     if remove_stopwords:
-        tokens = [token for token in tokens if token not in STOPWORDS]
+        tokens = [
+            token
+            for token in tokens
+            if token not in STOPWORDS
+        ]
 
     return tokens
 
 
-def normalise_generated_claim(
-    claim: str,
-) -> str:
-    """Clean generated claim text."""
+def normalise_generated_claim(claim: str) -> str:
+    """
+    Clean the claim produced by the QA2D generation model.
+
+    Common generation prefixes and surrounding quotation marks are removed.
+    Terminal punctuation is added when necessary.
+    """
 
     cleaned_claim = clean_text(claim)
 
@@ -330,24 +310,28 @@ def normalise_generated_claim(
 
     for prefix in prefixes:
         if lowered_claim.startswith(prefix):
-            cleaned_claim = cleaned_claim[len(prefix) :].strip()
-
+            cleaned_claim = cleaned_claim[
+                len(prefix) :
+            ].strip()
             break
 
     cleaned_claim = cleaned_claim.strip("\"' ")
 
-    if cleaned_claim and cleaned_claim[-1] not in ".!?":
+    if (
+        cleaned_claim
+        and cleaned_claim[-1] not in ".!?"
+    ):
         cleaned_claim += "."
 
     return cleaned_claim
 
 
-def normalize_qa2d_input(
-    text: str,
-) -> str:
+def normalize_qa2d_input(text: str) -> str:
     """
-    Normalize input according to the QA2D model's
-    expected training format.
+    Normalize text according to the QA2D model's expected input format.
+
+    Input is lowercased and punctuation is removed before the question and
+    answer are combined into the model-specific `question. answer` format.
     """
 
     normalized_text = clean_text(text).lower()
@@ -368,8 +352,14 @@ def calculate_token_coverage(
     target_text: str,
 ) -> float:
     """
-    Calculate the proportion of source tokens present
-    in the target text.
+    Measure how much source information is preserved in a target text.
+
+    The score is the proportion of source tokens that also appear in the
+    target. Content words are preferred; if no content words remain, the
+    comparison falls back to all normalized tokens.
+
+    This is used mainly to check whether the generated claim preserved the
+    predicted answer.
     """
 
     source_tokens = tokenize_text(
@@ -397,12 +387,18 @@ def calculate_token_coverage(
         return 1.0
 
     source_counter = Counter(source_tokens)
-
     target_counter = Counter(target_tokens)
 
-    matched_count = sum((source_counter & target_counter).values())
+    matched_count = sum(
+        (
+            source_counter
+            & target_counter
+        ).values()
+    )
 
-    total_source_count = sum(source_counter.values())
+    total_source_count = sum(
+        source_counter.values()
+    )
 
     return matched_count / total_source_count
 
@@ -412,8 +408,10 @@ def calculate_question_copy_ratio(
     claim: str,
 ) -> float:
     """
-    Calculate how much of the question appears
-    in the generated claim.
+    Measure how much of the original question is copied into the claim.
+
+    Very high copying can indicate that the QA2D model failed to transform
+    the interrogative question into a proper declarative statement.
     """
 
     question_tokens = tokenize_text(
@@ -429,39 +427,65 @@ def calculate_question_copy_ratio(
     if not question_tokens:
         return 0.0
 
-    question_counter = Counter(question_tokens)
+    question_counter = Counter(
+        question_tokens
+    )
 
-    claim_counter = Counter(claim_tokens)
+    claim_counter = Counter(
+        claim_tokens
+    )
 
-    shared_count = sum((question_counter & claim_counter).values())
+    shared_count = sum(
+        (
+            question_counter
+            & claim_counter
+        ).values()
+    )
 
-    return shared_count / sum(question_counter.values())
+    return (
+        shared_count
+        / sum(question_counter.values())
+    )
 
 
-def looks_like_question(
-    claim: str,
-) -> bool:
-    """Detect whether a claim remains in question form."""
+def looks_like_question(claim: str) -> bool:
+    """
+    Detect whether generated text still appears to be a question.
+
+    A trailing question mark or a common interrogative/auxiliary prefix is
+    treated as evidence that QA-to-declarative conversion may have failed.
+    """
 
     cleaned_claim = clean_text(claim)
-
     lowered_claim = cleaned_claim.lower()
 
     if cleaned_claim.endswith("?"):
         return True
 
-    return any(lowered_claim.startswith(prefix) for prefix in QUESTION_PREFIXES)
+    return any(
+        lowered_claim.startswith(prefix)
+        for prefix in QUESTION_PREFIXES
+    )
 
 
 def is_answer_only_fragment(
     claim: str,
     answer: str,
 ) -> bool:
-    """Detect output containing only the answer."""
+    """
+    Detect a generation that contains only the answer.
 
-    normalized_claim = normalize_for_comparison(claim)
+    An answer-only fragment is not a self-contained declarative statement and
+    therefore is not considered reliable input for the NLI verifier.
+    """
 
-    normalized_answer = normalize_for_comparison(answer)
+    normalized_claim = normalize_for_comparison(
+        claim
+    )
+
+    normalized_answer = normalize_for_comparison(
+        answer
+    )
 
     if not normalized_answer:
         return False
@@ -473,11 +497,19 @@ def is_question_repetition(
     question: str,
     claim: str,
 ) -> bool:
-    """Detect an unchanged or nearly unchanged question."""
+    """
+    Detect an unchanged question returned as the generated claim.
 
-    normalized_question = normalize_for_comparison(question)
+    This identifies a clear failure of the QA-to-declarative transformation.
+    """
 
-    normalized_claim = normalize_for_comparison(claim)
+    normalized_question = normalize_for_comparison(
+        question
+    )
+
+    normalized_claim = normalize_for_comparison(
+        claim
+    )
 
     if not normalized_question:
         return False
@@ -485,10 +517,12 @@ def is_question_repetition(
     return normalized_question == normalized_claim
 
 
-def extract_numbers(
-    text: str,
-) -> list[str]:
-    """Extract numeric expressions."""
+def extract_numbers(text: str) -> list[str]:
+    """
+    Extract simple numeric expressions used by the preservation check.
+
+    Examples include integer/decimal values and optional percentage symbols.
+    """
 
     return re.findall(
         r"\b\d+(?:[.,]\d+)?%?\b",
@@ -502,23 +536,29 @@ def validate_number_preservation(
     claim: str,
 ) -> bool:
     """
-    Check whether numbers in the answer are preserved.
+    Check whether numeric values from the predicted answer survive generation.
 
-    Numbers appearing only in the question are not required
-    to be duplicated beyond their natural role in the claim.
+    Numbers that occur only in the question are not required to be duplicated.
+    Gold/reference answers are not used.
     """
 
     del question
 
-    answer_numbers = Counter(extract_numbers(answer))
+    answer_numbers = Counter(
+        extract_numbers(answer)
+    )
 
     if not answer_numbers:
         return True
 
-    claim_numbers = Counter(extract_numbers(claim))
+    claim_numbers = Counter(
+        extract_numbers(claim)
+    )
 
     return all(
-        claim_numbers[number] >= count for number, count in answer_numbers.items()
+        claim_numbers[number] >= count
+        for number, count
+        in answer_numbers.items()
     )
 
 
@@ -528,10 +568,11 @@ def validate_negation_preservation(
     claim: str,
 ) -> bool:
     """
-    Check whether explicit negation is preserved.
+    Check whether explicit negation survives QA-to-claim generation.
 
-    This is a conservative lexical check rather than
-    semantic inference.
+    This is intentionally a conservative lexical diagnostic rather than
+    semantic reasoning. If the source QA pair contains explicit negation,
+    the generated claim must also contain an explicit negation signal.
     """
 
     negation_terms = {
@@ -569,12 +610,18 @@ def validate_negation_preservation(
         )
     )
 
-    source_negations = source_tokens & negation_terms
+    source_negations = (
+        source_tokens
+        & negation_terms
+    )
 
     if not source_negations:
         return True
 
-    claim_negations = claim_tokens & negation_terms
+    claim_negations = (
+        claim_tokens
+        & negation_terms
+    )
 
     return bool(claim_negations)
 
@@ -588,9 +635,24 @@ def validate_generated_claim(
     max_question_copy_ratio: float,
 ) -> dict[str, Any]:
     """
-    Validate claim generation using general rules.
+    Validate generated claim quality using dataset-independent rules.
 
-    Gold answers and correctness labels are not used.
+    The checks detect structural or information-preservation failures before
+    the claim reaches the NLI model.
+
+    Validation considers:
+
+    - empty claims
+    - outputs that still look like questions
+    - answer-only fragments
+    - repeated questions
+    - claims that are too short
+    - loss of answer tokens
+    - loss of numeric information
+    - loss of explicit negation
+    - excessive copying of a question that remains question-like
+
+    Gold answers and prediction-correctness labels are never used.
     """
 
     reasons: list[str] = []
@@ -607,26 +669,34 @@ def validate_generated_claim(
         remove_stopwords=True,
     )
 
-    answer_token_coverage = calculate_token_coverage(
-        source_text=answer,
-        target_text=cleaned_claim,
+    answer_token_coverage = (
+        calculate_token_coverage(
+            source_text=answer,
+            target_text=cleaned_claim,
+        )
     )
 
-    question_copy_ratio = calculate_question_copy_ratio(
-        question=question,
-        claim=cleaned_claim,
+    question_copy_ratio = (
+        calculate_question_copy_ratio(
+            question=question,
+            claim=cleaned_claim,
+        )
     )
 
-    number_preserved = validate_number_preservation(
-        question=question,
-        answer=answer,
-        claim=cleaned_claim,
+    number_preserved = (
+        validate_number_preservation(
+            question=question,
+            answer=answer,
+            claim=cleaned_claim,
+        )
     )
 
-    negation_preserved = validate_negation_preservation(
-        question=question,
-        answer=answer,
-        claim=cleaned_claim,
+    negation_preserved = (
+        validate_negation_preservation(
+            question=question,
+            answer=answer,
+            claim=cleaned_claim,
+        )
     )
 
     if not cleaned_claim:
@@ -639,54 +709,90 @@ def validate_generated_claim(
         claim=cleaned_claim,
         answer=answer,
     ):
-        reasons.append("ANSWER_ONLY_FRAGMENT")
+        reasons.append(
+            "ANSWER_ONLY_FRAGMENT"
+        )
 
     if is_question_repetition(
         question=question,
         claim=cleaned_claim,
     ):
-        reasons.append("QUESTION_REPEATED")
+        reasons.append(
+            "QUESTION_REPEATED"
+        )
 
-    if len(claim_tokens) < min_claim_token_count:
+    if (
+        len(claim_tokens)
+        < min_claim_token_count
+    ):
         reasons.append("TOO_SHORT")
 
-    if answer_token_coverage < min_answer_token_coverage:
-        reasons.append("ANSWER_NOT_PRESERVED")
+    if (
+        answer_token_coverage
+        < min_answer_token_coverage
+    ):
+        reasons.append(
+            "ANSWER_NOT_PRESERVED"
+        )
 
     if not number_preserved:
-        reasons.append("NUMBER_NOT_PRESERVED")
+        reasons.append(
+            "NUMBER_NOT_PRESERVED"
+        )
 
     if not negation_preserved:
-        reasons.append("NEGATION_NOT_PRESERVED")
+        reasons.append(
+            "NEGATION_NOT_PRESERVED"
+        )
 
-    if question_copy_ratio >= max_question_copy_ratio and looks_like_question(
-        cleaned_claim
+    if (
+        question_copy_ratio
+        >= max_question_copy_ratio
+        and looks_like_question(
+            cleaned_claim
+        )
     ):
-        reasons.append("EXCESSIVE_QUESTION_COPY")
+        reasons.append(
+            "EXCESSIVE_QUESTION_COPY"
+        )
 
     return {
-        "qa_claim_valid": (len(reasons) == 0),
-        "qa_claim_validation_reasons": (reasons),
-        "qa_claim_answer_token_coverage": (answer_token_coverage),
-        "qa_claim_question_copy_ratio": (question_copy_ratio),
-        "qa_claim_token_count": len(claim_tokens),
-        "qa_claim_content_token_count": len(claim_content_tokens),
-        "qa_claim_number_preserved": (number_preserved),
-        "qa_claim_negation_preserved": (negation_preserved),
+        "qa_claim_valid": len(reasons) == 0,
+        "qa_claim_validation_reasons": reasons,
+        "qa_claim_answer_token_coverage": (
+            answer_token_coverage
+        ),
+        "qa_claim_question_copy_ratio": (
+            question_copy_ratio
+        ),
+        "qa_claim_token_count": (
+            len(claim_tokens)
+        ),
+        "qa_claim_content_token_count": (
+            len(claim_content_tokens)
+        ),
+        "qa_claim_number_preserved": (
+            number_preserved
+        ),
+        "qa_claim_negation_preserved": (
+            negation_preserved
+        ),
     }
 
 
 def select_device() -> torch.device:
-    """Select CUDA, Apple MPS, or CPU."""
+    """
+    Select the best available inference hardware.
+
+    CUDA is preferred when available, followed by Apple's MPS backend.
+    CPU is used otherwise.
+    """
 
     if torch.cuda.is_available():
         return torch.device("cuda")
 
     if (
-        hasattr(
-            torch.backends,
-            "mps",
-        )
+        hasattr(torch.backends, "mps")
         and torch.backends.mps.is_available()
     ):
         return torch.device("mps")
@@ -699,21 +805,36 @@ def build_qa2d_prompt(
     answer: str,
 ) -> str:
     """
-    Build input for the QA2D model.
+    Build the model-specific input for the QA2D converter.
 
-    Format:
-    question. answer
+    The specialized QA2D model expects a compact:
+
+        question. answer
+
+    representation rather than the instruction-style prompt used by V1.
     """
 
-    normalized_question = normalize_qa2d_input(question)
+    normalized_question = normalize_qa2d_input(
+        question
+    )
 
-    normalized_answer = normalize_qa2d_input(answer)
+    normalized_answer = normalize_qa2d_input(
+        answer
+    )
 
-    return f"{normalized_question}. {normalized_answer}"
+    return (
+        f"{normalized_question}. "
+        f"{normalized_answer}"
+    )
 
 
 class QuestionToClaimConverter:
-    """Convert question-answer pairs into claims."""
+    """
+    Convert QA pairs into declarative claims using a specialized QA2D model.
+
+    The pretrained sequence-to-sequence model is used only for inference.
+    Its model weights are not trained or fine-tuned by this pipeline.
+    """
 
     def __init__(
         self,
@@ -722,18 +843,42 @@ class QuestionToClaimConverter:
         max_input_tokens: int,
         max_new_tokens: int,
     ) -> None:
+        if max_input_tokens <= 0:
+            raise ValueError(
+                "max_input_tokens must be greater than zero."
+            )
+
+        if max_new_tokens <= 0:
+            raise ValueError(
+                "max_new_tokens must be greater than zero."
+            )
+
         self.device = device
-        self.max_input_tokens = max_input_tokens
-        self.max_new_tokens = max_new_tokens
+        self.max_input_tokens = (
+            max_input_tokens
+        )
+        self.max_new_tokens = (
+            max_new_tokens
+        )
 
-        print(f"Loading QA-to-claim model: {model_name}")
+        print(
+            f"Loading QA-to-claim model: "
+            f"{model_name}"
+        )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = (
+            AutoTokenizer.from_pretrained(
+                model_name
+            )
+        )
 
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        self.model = (
+            AutoModelForSeq2SeqLM.from_pretrained(
+                model_name
+            )
+        )
 
         self.model.to(self.device)
-
         self.model.eval()
 
     @torch.inference_mode()
@@ -742,10 +887,19 @@ class QuestionToClaimConverter:
         questions: list[str],
         answers: list[str],
     ) -> list[str]:
-        """Generate claims for a batch."""
+        """
+        Generate declarative claims for one batch of QA pairs.
+
+        Beam search is deterministic because sampling is disabled.
+        """
 
         if len(questions) != len(answers):
-            raise ValueError("Question and answer batch sizes must match.")
+            raise ValueError(
+                "Question and answer batch sizes must match."
+            )
+
+        if not questions:
+            return []
 
         prompts = [
             build_qa2d_prompt(
@@ -762,33 +916,51 @@ class QuestionToClaimConverter:
             prompts,
             padding=True,
             truncation=True,
-            max_length=(self.max_input_tokens),
+            max_length=self.max_input_tokens,
             return_tensors="pt",
         )
 
         encoded_inputs = {
-            key: value.to(self.device) for key, value in encoded_inputs.items()
+            key: value.to(self.device)
+            for key, value
+            in encoded_inputs.items()
         }
 
         generated_ids = self.model.generate(
             **encoded_inputs,
-            max_new_tokens=(self.max_new_tokens),
+            max_new_tokens=self.max_new_tokens,
             num_beams=4,
             do_sample=False,
             early_stopping=True,
         )
 
-        generated_claims = self.tokenizer.batch_decode(
-            generated_ids,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=True,
+        generated_claims = (
+            self.tokenizer.batch_decode(
+                generated_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            )
         )
 
-        return [normalise_generated_claim(claim) for claim in generated_claims]
+        return [
+            normalise_generated_claim(claim)
+            for claim in generated_claims
+        ]
 
 
 class QuestionAwareNLIVerifier:
-    """Verify claims against contexts using MNLI."""
+    """
+    Verify generated QA claims against contexts using MNLI.
+
+    The context is the premise and the generated declarative claim is the
+    hypothesis.
+
+    The verifier returns entailment, neutral, and contradiction probabilities
+    together with a categorical NLI label.
+
+    These probabilities describe the NLI classifier's belief over its own
+    classes; they are not calibrated probabilities that the QA answer is correct.
+    """
 
     def __init__(
         self,
@@ -799,51 +971,110 @@ class QuestionAwareNLIVerifier:
         entailment_threshold: float,
         contradiction_threshold: float,
     ) -> None:
+        if max_context_tokens <= 0:
+            raise ValueError(
+                "max_context_tokens must be greater than zero."
+            )
+
+        if max_claim_tokens <= 0:
+            raise ValueError(
+                "max_claim_tokens must be greater than zero."
+            )
+
+        if not (
+            0.0
+            <= entailment_threshold
+            <= 1.0
+        ):
+            raise ValueError(
+                "Entailment threshold must be between 0 and 1."
+            )
+
+        if not (
+            0.0
+            <= contradiction_threshold
+            <= 1.0
+        ):
+            raise ValueError(
+                "Contradiction threshold must be between 0 and 1."
+            )
+
         self.device = device
+        self.max_context_tokens = (
+            max_context_tokens
+        )
+        self.max_claim_tokens = (
+            max_claim_tokens
+        )
+        self.entailment_threshold = (
+            entailment_threshold
+        )
+        self.contradiction_threshold = (
+            contradiction_threshold
+        )
 
-        self.max_context_tokens = max_context_tokens
+        print(
+            f"Loading NLI model: "
+            f"{model_name}"
+        )
 
-        self.max_claim_tokens = max_claim_tokens
+        self.tokenizer = (
+            AutoTokenizer.from_pretrained(
+                model_name
+            )
+        )
 
-        self.entailment_threshold = entailment_threshold
-
-        self.contradiction_threshold = contradiction_threshold
-
-        print(f"Loading NLI model: {model_name}")
-
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model = (
+            AutoModelForSequenceClassification.from_pretrained(
+                model_name
+            )
+        )
 
         self.model.to(self.device)
-
         self.model.eval()
 
-        self.label_to_id = self._resolve_label_ids()
+        self.label_to_id = (
+            self._resolve_label_ids()
+        )
 
     def _resolve_label_ids(
         self,
     ) -> dict[str, int]:
-        """Resolve model-specific NLI labels."""
+        """
+        Resolve semantic NLI labels to model-specific class IDs.
 
-        resolved_labels: dict[
-            str,
-            int,
-        ] = {}
+        The implementation reads the model configuration instead of assuming
+        a fixed label order.
+        """
 
-        for raw_id, raw_label in self.model.config.id2label.items():
-            label = str(raw_label).strip().lower()
+        resolved_labels: dict[str, int] = {}
+
+        for (
+            raw_id,
+            raw_label,
+        ) in self.model.config.id2label.items():
+            label = (
+                str(raw_label)
+                .strip()
+                .lower()
+            )
 
             label_id = int(raw_id)
 
             if "entail" in label:
-                resolved_labels["entailment"] = label_id
+                resolved_labels[
+                    "entailment"
+                ] = label_id
 
             elif "neutral" in label:
-                resolved_labels["neutral"] = label_id
+                resolved_labels[
+                    "neutral"
+                ] = label_id
 
             elif "contrad" in label:
-                resolved_labels["contradiction"] = label_id
+                resolved_labels[
+                    "contradiction"
+                ] = label_id
 
         required_labels = {
             "entailment",
@@ -851,13 +1082,16 @@ class QuestionAwareNLIVerifier:
             "contradiction",
         }
 
-        missing_labels = required_labels - set(resolved_labels)
+        missing_labels = (
+            required_labels
+            - set(resolved_labels)
+        )
 
         if missing_labels:
             raise ValueError(
                 "Could not resolve NLI labels. "
                 f"Missing: {sorted(missing_labels)}. "
-                f"Available labels: "
+                "Available labels: "
                 f"{self.model.config.id2label}"
             )
 
@@ -868,7 +1102,11 @@ class QuestionAwareNLIVerifier:
         text: str,
         max_tokens: int,
     ) -> str:
-        """Truncate text with the NLI tokenizer."""
+        """
+        Truncate one text using the NLI model's own tokenizer.
+
+        This keeps the context/claim pair within the model's input limits.
+        """
 
         token_ids = self.tokenizer.encode(
             text,
@@ -889,18 +1127,35 @@ class QuestionAwareNLIVerifier:
         neutral_probability: float,
         contradiction_probability: float,
     ) -> str:
-        """Assign an NLI evidence label."""
+        """
+        Convert NLI probabilities into a semantic evidence label.
 
-        if contradiction_probability >= self.contradiction_threshold:
+        Contradiction and entailment thresholds receive priority. If neither
+        threshold is reached, the class with the largest probability is used.
+        """
+
+        if (
+            contradiction_probability
+            >= self.contradiction_threshold
+        ):
             return "CONTRADICTION"
 
-        if entailment_probability >= self.entailment_threshold:
+        if (
+            entailment_probability
+            >= self.entailment_threshold
+        ):
             return "ENTAILMENT"
 
         probabilities = {
-            "ENTAILMENT": (entailment_probability),
-            "NEUTRAL": (neutral_probability),
-            "CONTRADICTION": (contradiction_probability),
+            "ENTAILMENT": (
+                entailment_probability
+            ),
+            "NEUTRAL": (
+                neutral_probability
+            ),
+            "CONTRADICTION": (
+                contradiction_probability
+            ),
         }
 
         return max(
@@ -914,15 +1169,24 @@ class QuestionAwareNLIVerifier:
         contexts: list[str],
         claims: list[str],
     ) -> list[dict[str, Any]]:
-        """Verify context-claim pairs."""
+        """
+        Run NLI inference for a batch of valid context-claim pairs.
+
+        Invalid claims are filtered before this function is called.
+        """
 
         if len(contexts) != len(claims):
-            raise ValueError("Context and claim batch sizes must match.")
+            raise ValueError(
+                "Context and claim batch sizes must match."
+            )
+
+        if not contexts:
+            return []
 
         truncated_contexts = [
             self._truncate_text(
                 text=context,
-                max_tokens=(self.max_context_tokens),
+                max_tokens=self.max_context_tokens,
             )
             for context in contexts
         ]
@@ -930,7 +1194,7 @@ class QuestionAwareNLIVerifier:
         truncated_claims = [
             self._truncate_text(
                 text=claim,
-                max_tokens=(self.max_claim_tokens),
+                max_tokens=self.max_claim_tokens,
             )
             for claim in claims
         ]
@@ -940,15 +1204,19 @@ class QuestionAwareNLIVerifier:
             truncated_claims,
             padding=True,
             truncation="only_first",
-            max_length=512,
+            max_length=NLI_MAX_TOTAL_TOKENS,
             return_tensors="pt",
         )
 
         encoded_inputs = {
-            key: value.to(self.device) for key, value in encoded_inputs.items()
+            key: value.to(self.device)
+            for key, value
+            in encoded_inputs.items()
         }
 
-        outputs = self.model(**encoded_inputs)
+        outputs = self.model(
+            **encoded_inputs
+        )
 
         probabilities = (
             torch.softmax(
@@ -959,25 +1227,47 @@ class QuestionAwareNLIVerifier:
             .cpu()
         )
 
-        entailment_id = self.label_to_id["entailment"]
+        entailment_id = self.label_to_id[
+            "entailment"
+        ]
 
-        neutral_id = self.label_to_id["neutral"]
+        neutral_id = self.label_to_id[
+            "neutral"
+        ]
 
-        contradiction_id = self.label_to_id["contradiction"]
+        contradiction_id = self.label_to_id[
+            "contradiction"
+        ]
 
-        results: list[dict[str, Any]] = []
+        results: list[
+            dict[str, Any]
+        ] = []
 
         for row in probabilities:
-            entailment_probability = float(row[entailment_id].item())
+            entailment_probability = float(
+                row[entailment_id].item()
+            )
 
-            neutral_probability = float(row[neutral_id].item())
+            neutral_probability = float(
+                row[neutral_id].item()
+            )
 
-            contradiction_probability = float(row[contradiction_id].item())
+            contradiction_probability = float(
+                row[
+                    contradiction_id
+                ].item()
+            )
 
             label = self._assign_label(
-                entailment_probability=(entailment_probability),
-                neutral_probability=(neutral_probability),
-                contradiction_probability=(contradiction_probability),
+                entailment_probability=(
+                    entailment_probability
+                ),
+                neutral_probability=(
+                    neutral_probability
+                ),
+                contradiction_probability=(
+                    contradiction_probability
+                ),
             )
 
             confidence = max(
@@ -988,11 +1278,17 @@ class QuestionAwareNLIVerifier:
 
             results.append(
                 {
-                    "qa_nli_label": (label),
-                    "qa_nli_confidence": (confidence),
-                    "qa_entailment_probability": (entailment_probability),
-                    "qa_neutral_probability": (neutral_probability),
-                    "qa_contradiction_probability": (contradiction_probability),
+                    "qa_nli_label": label,
+                    "qa_nli_confidence": confidence,
+                    "qa_entailment_probability": (
+                        entailment_probability
+                    ),
+                    "qa_neutral_probability": (
+                        neutral_probability
+                    ),
+                    "qa_contradiction_probability": (
+                        contradiction_probability
+                    ),
                 }
             )
 
@@ -1003,10 +1299,19 @@ def batched_indices(
     total_size: int,
     batch_size: int,
 ) -> Iterable[tuple[int, int]]:
-    """Yield batch index ranges."""
+    """
+    Yield deterministic start/end ranges for mini-batch processing.
+    """
+
+    if total_size < 0:
+        raise ValueError(
+            "total_size cannot be negative."
+        )
 
     if batch_size <= 0:
-        raise ValueError("Batch size must be positive.")
+        raise ValueError(
+            "Batch size must be positive."
+        )
 
     for start_index in range(
         0,
@@ -1025,10 +1330,17 @@ def batched_indices(
 def validate_records(
     records: list[dict[str, Any]],
 ) -> None:
-    """Validate required input fields."""
+    """
+    Validate mandatory input fields before claim generation.
+
+    Question and context are required. Empty predicted answers are allowed and
+    will be assigned EMPTY_ANSWER without entering claim generation or NLI.
+    """
 
     if not records:
-        raise ValueError("Input file contains no records.")
+        raise ValueError(
+            "Input file contains no records."
+        )
 
     missing_questions = 0
     missing_contexts = 0
@@ -1041,16 +1353,36 @@ def validate_records(
             missing_contexts += 1
 
     if missing_questions:
-        raise ValueError(f"{missing_questions} records do not contain a question.")
+        raise ValueError(
+            f"{missing_questions} records "
+            "do not contain a question."
+        )
 
     if missing_contexts:
-        raise ValueError(f"{missing_contexts} records do not contain a context.")
+        raise ValueError(
+            f"{missing_contexts} records "
+            "do not contain a context."
+        )
 
 
 def create_invalid_result(
     label: str,
 ) -> dict[str, Any]:
-    """Create a non-NLI result."""
+    """
+    Create the semantic result for a record that does not enter NLI.
+
+    INVALID_CLAIM and EMPTY_ANSWER are bookkeeping states, not NLI classes.
+    Their NLI probabilities are deliberately stored as zero because no NLI
+    inference was performed.
+    """
+
+    if label not in {
+        "INVALID_CLAIM",
+        "EMPTY_ANSWER",
+    }:
+        raise ValueError(
+            f"Unsupported non-NLI label: {label}"
+        )
 
     return {
         "qa_nli_label": label,
@@ -1059,6 +1391,92 @@ def create_invalid_result(
         "qa_neutral_probability": 0.0,
         "qa_contradiction_probability": 0.0,
     }
+
+
+def validate_runtime_settings(
+    batch_size: int,
+    qa2d_max_input_tokens: int,
+    generation_max_new_tokens: int,
+    max_context_tokens: int,
+    max_claim_tokens: int,
+    entailment_threshold: float,
+    contradiction_threshold: float,
+    min_answer_token_coverage: float,
+    min_claim_token_count: int,
+    max_question_copy_ratio: float,
+) -> None:
+    """
+    Validate runtime and claim-quality configuration before model inference.
+
+    These checks reject malformed experiment settings without changing the
+    configured V2 verification policy.
+    """
+
+    if batch_size <= 0:
+        raise ValueError(
+            "batch_size must be greater than zero."
+        )
+
+    if qa2d_max_input_tokens <= 0:
+        raise ValueError(
+            "qa2d_max_input_tokens must be greater than zero."
+        )
+
+    if generation_max_new_tokens <= 0:
+        raise ValueError(
+            "generation_max_new_tokens must be greater than zero."
+        )
+
+    if max_context_tokens <= 0:
+        raise ValueError(
+            "max_context_tokens must be greater than zero."
+        )
+
+    if max_claim_tokens <= 0:
+        raise ValueError(
+            "max_claim_tokens must be greater than zero."
+        )
+
+    if not (
+        0.0
+        <= entailment_threshold
+        <= 1.0
+    ):
+        raise ValueError(
+            "entailment_threshold must be between 0 and 1."
+        )
+
+    if not (
+        0.0
+        <= contradiction_threshold
+        <= 1.0
+    ):
+        raise ValueError(
+            "contradiction_threshold must be between 0 and 1."
+        )
+
+    if not (
+        0.0
+        <= min_answer_token_coverage
+        <= 1.0
+    ):
+        raise ValueError(
+            "min_answer_token_coverage must be between 0 and 1."
+        )
+
+    if min_claim_token_count <= 0:
+        raise ValueError(
+            "min_claim_token_count must be greater than zero."
+        )
+
+    if not (
+        0.0
+        <= max_question_copy_ratio
+        <= 1.0
+    ):
+        raise ValueError(
+            "max_question_copy_ratio must be between 0 and 1."
+        )
 
 
 def verify_predictions(
@@ -1077,36 +1495,99 @@ def verify_predictions(
     min_claim_token_count: int,
     max_question_copy_ratio: float,
 ) -> list[dict[str, Any]]:
-    """Run V2 question-aware verification."""
+    """
+    Run the complete question-aware semantic verification V2 pipeline.
 
-    records = load_jsonl(input_path)
+    Predictions are processed in batches. Non-empty answers are converted into
+    declarative claims and validated using dataset-independent checks.
 
-    validate_records(records)
+    Only valid claims are sent to the NLI model. Invalid claims and empty answers
+    receive explicit non-NLI labels.
 
-    if not (0.0 <= min_answer_token_coverage <= 1.0):
-        raise ValueError("min_answer_token_coverage must be between 0 and 1.")
+    Original prediction fields are preserved and enriched with claim-quality,
+    semantic-verification, model, and version metadata.
+    """
+
+    records = load_jsonl(
+        input_path
+    )
+
+    validate_records(
+        records
+    )
+
+    validate_runtime_settings(
+        batch_size=batch_size,
+        qa2d_max_input_tokens=(
+            qa2d_max_input_tokens
+        ),
+        generation_max_new_tokens=(
+            generation_max_new_tokens
+        ),
+        max_context_tokens=(
+            max_context_tokens
+        ),
+        max_claim_tokens=(
+            max_claim_tokens
+        ),
+        entailment_threshold=(
+            entailment_threshold
+        ),
+        contradiction_threshold=(
+            contradiction_threshold
+        ),
+        min_answer_token_coverage=(
+            min_answer_token_coverage
+        ),
+        min_claim_token_count=(
+            min_claim_token_count
+        ),
+        max_question_copy_ratio=(
+            max_question_copy_ratio
+        ),
+    )
 
     device = select_device()
 
-    print(f"Using device: {device}")
-
-    claim_converter = QuestionToClaimConverter(
-        model_name=(qa2d_model_name),
-        device=device,
-        max_input_tokens=(qa2d_max_input_tokens),
-        max_new_tokens=(generation_max_new_tokens),
+    print(
+        f"Using device: {device}"
     )
 
-    nli_verifier = QuestionAwareNLIVerifier(
-        model_name=(nli_model_name),
-        device=device,
-        max_context_tokens=(max_context_tokens),
-        max_claim_tokens=(max_claim_tokens),
-        entailment_threshold=(entailment_threshold),
-        contradiction_threshold=(contradiction_threshold),
+    claim_converter = (
+        QuestionToClaimConverter(
+            model_name=qa2d_model_name,
+            device=device,
+            max_input_tokens=(
+                qa2d_max_input_tokens
+            ),
+            max_new_tokens=(
+                generation_max_new_tokens
+            ),
+        )
     )
 
-    verified_records: list[dict[str, Any]] = []
+    nli_verifier = (
+        QuestionAwareNLIVerifier(
+            model_name=nli_model_name,
+            device=device,
+            max_context_tokens=(
+                max_context_tokens
+            ),
+            max_claim_tokens=(
+                max_claim_tokens
+            ),
+            entailment_threshold=(
+                entailment_threshold
+            ),
+            contradiction_threshold=(
+                contradiction_threshold
+            ),
+        )
+    )
+
+    verified_records: list[
+        dict[str, Any]
+    ] = []
 
     total_records = len(records)
 
@@ -1120,20 +1601,42 @@ def verify_predictions(
         ),
         start=1,
     ):
-        batch_records = records[start_index:end_index]
+        batch_records = records[
+            start_index:end_index
+        ]
 
-        questions = [get_question(record) for record in batch_records]
+        questions = [
+            get_question(record)
+            for record in batch_records
+        ]
 
-        answers = [get_predicted_answer(record) for record in batch_records]
+        answers = [
+            get_predicted_answer(record)
+            for record in batch_records
+        ]
 
-        contexts = [get_context(record) for record in batch_records]
+        contexts = [
+            get_context(record)
+            for record in batch_records
+        ]
 
-        claims: list[str | None] = [None for _ in batch_records]
+        claims: list[
+            str | None
+        ] = [
+            None
+            for _ in batch_records
+        ]
 
-        validations: list[dict[str, Any]] = [
+        # Empty answers cannot form a meaningful QA claim. These default
+        # validation records are replaced below for non-empty answers.
+        validations: list[
+            dict[str, Any]
+        ] = [
             {
                 "qa_claim_valid": False,
-                "qa_claim_validation_reasons": ["EMPTY_ANSWER"],
+                "qa_claim_validation_reasons": [
+                    "EMPTY_ANSWER"
+                ],
                 "qa_claim_answer_token_coverage": 0.0,
                 "qa_claim_question_copy_ratio": 0.0,
                 "qa_claim_token_count": 0,
@@ -1145,54 +1648,110 @@ def verify_predictions(
         ]
 
         non_empty_answer_indices = [
-            index for index, answer in enumerate(answers) if answer
+            index
+            for index, answer
+            in enumerate(answers)
+            if answer
         ]
 
         if non_empty_answer_indices:
-            generated_claims = claim_converter.convert_batch(
-                questions=[questions[index] for index in non_empty_answer_indices],
-                answers=[answers[index] for index in non_empty_answer_indices],
+            generated_claims = (
+                claim_converter.convert_batch(
+                    questions=[
+                        questions[index]
+                        for index
+                        in non_empty_answer_indices
+                    ],
+                    answers=[
+                        answers[index]
+                        for index
+                        in non_empty_answer_indices
+                    ],
+                )
             )
 
-            for local_index, claim in zip(
+            for (
+                local_index,
+                claim,
+            ) in zip(
                 non_empty_answer_indices,
                 generated_claims,
             ):
-                claims[local_index] = claim
+                claims[
+                    local_index
+                ] = claim
 
-                validations[local_index] = validate_generated_claim(
-                    question=(questions[local_index]),
-                    answer=(answers[local_index]),
+                validations[
+                    local_index
+                ] = validate_generated_claim(
+                    question=questions[
+                        local_index
+                    ],
+                    answer=answers[
+                        local_index
+                    ],
                     claim=claim,
-                    min_answer_token_coverage=(min_answer_token_coverage),
-                    min_claim_token_count=(min_claim_token_count),
-                    max_question_copy_ratio=(max_question_copy_ratio),
+                    min_answer_token_coverage=(
+                        min_answer_token_coverage
+                    ),
+                    min_claim_token_count=(
+                        min_claim_token_count
+                    ),
+                    max_question_copy_ratio=(
+                        max_question_copy_ratio
+                    ),
                 )
 
         valid_claim_indices = [
             index
-            for index, validation in enumerate(validations)
-            if validation["qa_claim_valid"]
+            for index, validation
+            in enumerate(validations)
+            if validation[
+                "qa_claim_valid"
+            ]
         ]
 
+        # INVALID_CLAIM and EMPTY_ANSWER records bypass NLI. In particular,
+        # INVALID_CLAIM therefore receives zero entailment probability rather
+        # than an unreliable semantic score from a malformed generated claim.
         nli_results = [
             create_invalid_result(
-                "EMPTY_ANSWER" if not answers[index] else "INVALID_CLAIM"
+
+                    "EMPTY_ANSWER"
+                    if not answers[index]
+                    else "INVALID_CLAIM"
+
             )
-            for index in range(len(batch_records))
+            for index
+            in range(len(batch_records))
         ]
 
         if valid_claim_indices:
-            valid_nli_results = nli_verifier.verify_batch(
-                contexts=[contexts[index] for index in valid_claim_indices],
-                claims=[str(claims[index]) for index in valid_claim_indices],
+            valid_nli_results = (
+                nli_verifier.verify_batch(
+                    contexts=[
+                        contexts[index]
+                        for index
+                        in valid_claim_indices
+                    ],
+                    claims=[
+                        str(claims[index])
+                        for index
+                        in valid_claim_indices
+                    ],
+                )
             )
 
-            for local_index, result in zip(
+            for (
+                local_index,
+                result,
+            ) in zip(
                 valid_claim_indices,
                 valid_nli_results,
             ):
-                nli_results[local_index] = result
+                nli_results[
+                    local_index
+                ] = result
 
         for (
             record,
@@ -1209,28 +1768,43 @@ def verify_predictions(
             validations,
             nli_results,
         ):
-            updated_record = dict(record)
+            updated_record = dict(
+                record
+            )
 
             updated_record.update(
                 {
                     "qa_claim": claim,
-                    "qa_claim_question": (question),
-                    "qa_claim_answer": (answer),
+                    "qa_claim_question": question,
+                    "qa_claim_answer": answer,
                     **validation,
                     **nli_result,
-                    "qa_claim_generator_model": (qa2d_model_name),
-                    "qa_nli_model": (nli_model_name),
-                    "qa_verifier_version": ("question_aware_v2"),
+                    "qa_claim_generator_model": (
+                        qa2d_model_name
+                    ),
+                    "qa_nli_model": (
+                        nli_model_name
+                    ),
+                    "qa_verifier_version": (
+                        "question_aware_v2"
+                    ),
                 }
             )
 
-            verified_records.append(updated_record)
+            verified_records.append(
+                updated_record
+            )
 
-        print(f"Processed {end_index}/{total_records} records (batch {batch_number}).")
+        print(
+            f"Processed "
+            f"{end_index}/{total_records} "
+            f"records "
+            f"(batch {batch_number})."
+        )
 
     save_jsonl(
-        records=verified_records,
-        path=output_path,
+        verified_records,
+        output_path,
     )
 
     label_counts = Counter(
@@ -1253,24 +1827,36 @@ def verify_predictions(
         for record in verified_records
     )
 
-    invalid_reason_counts: Counter[str] = Counter()
+    invalid_reason_counts: Counter[
+        str
+    ] = Counter()
 
     for record in verified_records:
         for reason in record.get(
             "qa_claim_validation_reasons",
             [],
         ):
-            invalid_reason_counts[str(reason)] += 1
+            invalid_reason_counts[
+                str(reason)
+            ] += 1
 
-    print("\nQuestion-aware semantic verification V2 completed.")
+    print(
+        "\nQuestion-aware semantic "
+        "verification V2 completed."
+    )
 
     print(f"Input:  {input_path}")
-
     print(f"Output: {output_path}")
 
-    print(f"\nValid claims:   {valid_claim_count}")
+    print(
+        f"\nValid claims:   "
+        f"{valid_claim_count}"
+    )
 
-    print(f"Invalid claims: {total_records - valid_claim_count}")
+    print(
+        f"Invalid claims: "
+        f"{total_records - valid_claim_count}"
+    )
 
     print("\nLabel distribution:")
 
@@ -1281,14 +1867,24 @@ def verify_predictions(
         "INVALID_CLAIM",
         "EMPTY_ANSWER",
     ):
-        print(f"{label:<16}: {label_counts.get(label, 0)}")
+        print(
+            f"{label:<16}: "
+            f"{label_counts.get(label, 0)}"
+        )
 
-    print("\nInvalid-claim reasons:")
+    print(
+        "\nInvalid-claim reasons:"
+    )
 
     if invalid_reason_counts:
-        for reason, count in invalid_reason_counts.most_common():
-            print(f"{reason:<28}: {count}")
-
+        for (
+            reason,
+            count,
+        ) in invalid_reason_counts.most_common():
+            print(
+                f"{reason:<28}: "
+                f"{count}"
+            )
     else:
         print("None")
 
@@ -1296,7 +1892,7 @@ def verify_predictions(
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """Parse question-aware V2 verification settings."""
 
     parser = argparse.ArgumentParser(
         description=(
@@ -1307,82 +1903,104 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         "--input",
-        default=str(DEFAULT_INPUT_PATH),
+        default=str(
+            DEFAULT_INPUT_PATH
+        ),
     )
 
     parser.add_argument(
         "--output",
-        default=str(DEFAULT_OUTPUT_PATH),
+        default=str(
+            DEFAULT_OUTPUT_PATH
+        ),
     )
 
     parser.add_argument(
         "--qa2d-model",
-        default=(DEFAULT_QA2D_MODEL),
+        default=DEFAULT_QA2D_MODEL,
     )
 
     parser.add_argument(
         "--nli-model",
-        default=(DEFAULT_NLI_MODEL),
+        default=DEFAULT_NLI_MODEL,
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=(DEFAULT_BATCH_SIZE),
+        default=DEFAULT_BATCH_SIZE,
     )
 
     parser.add_argument(
         "--qa2d-max-input-tokens",
         type=int,
-        default=(DEFAULT_QA2D_MAX_INPUT_TOKENS),
+        default=(
+            DEFAULT_QA2D_MAX_INPUT_TOKENS
+        ),
     )
 
     parser.add_argument(
         "--generation-max-new-tokens",
         type=int,
-        default=(DEFAULT_GENERATION_MAX_NEW_TOKENS),
+        default=(
+            DEFAULT_GENERATION_MAX_NEW_TOKENS
+        ),
     )
 
     parser.add_argument(
         "--max-context-tokens",
         type=int,
-        default=(DEFAULT_MAX_CONTEXT_TOKENS),
+        default=(
+            DEFAULT_MAX_CONTEXT_TOKENS
+        ),
     )
 
     parser.add_argument(
         "--max-claim-tokens",
         type=int,
-        default=(DEFAULT_MAX_CLAIM_TOKENS),
+        default=(
+            DEFAULT_MAX_CLAIM_TOKENS
+        ),
     )
 
     parser.add_argument(
         "--entailment-threshold",
         type=float,
-        default=(DEFAULT_ENTAILMENT_THRESHOLD),
+        default=(
+            DEFAULT_ENTAILMENT_THRESHOLD
+        ),
     )
 
     parser.add_argument(
         "--contradiction-threshold",
         type=float,
-        default=(DEFAULT_CONTRADICTION_THRESHOLD),
+        default=(
+            DEFAULT_CONTRADICTION_THRESHOLD
+        ),
     )
 
     parser.add_argument(
         "--min-answer-token-coverage",
         type=float,
-        default=(DEFAULT_MIN_ANSWER_TOKEN_COVERAGE),
+        default=(
+            DEFAULT_MIN_ANSWER_TOKEN_COVERAGE
+        ),
     )
 
     parser.add_argument(
         "--min-claim-token-count",
         type=int,
-        default=(DEFAULT_MIN_CLAIM_TOKEN_COUNT),
+        default=(
+            DEFAULT_MIN_CLAIM_TOKEN_COUNT
+        ),
     )
 
     parser.add_argument(
         "--max-question-copy-ratio",
         type=float,
-        default=(DEFAULT_MAX_QUESTION_COPY_RATIO),
+        default=(
+            DEFAULT_MAX_QUESTION_COPY_RATIO
+        ),
     )
 
     return parser.parse_args()
@@ -1392,18 +2010,42 @@ if __name__ == "__main__":
     arguments = parse_arguments()
 
     verify_predictions(
-        input_path=(arguments.input),
-        output_path=(arguments.output),
-        qa2d_model_name=(arguments.qa2d_model),
-        nli_model_name=(arguments.nli_model),
-        batch_size=(arguments.batch_size),
-        qa2d_max_input_tokens=(arguments.qa2d_max_input_tokens),
-        generation_max_new_tokens=(arguments.generation_max_new_tokens),
-        max_context_tokens=(arguments.max_context_tokens),
-        max_claim_tokens=(arguments.max_claim_tokens),
-        entailment_threshold=(arguments.entailment_threshold),
-        contradiction_threshold=(arguments.contradiction_threshold),
-        min_answer_token_coverage=(arguments.min_answer_token_coverage),
-        min_claim_token_count=(arguments.min_claim_token_count),
-        max_question_copy_ratio=(arguments.max_question_copy_ratio),
+        input_path=arguments.input,
+        output_path=arguments.output,
+        qa2d_model_name=(
+            arguments.qa2d_model
+        ),
+        nli_model_name=(
+            arguments.nli_model
+        ),
+        batch_size=(
+            arguments.batch_size
+        ),
+        qa2d_max_input_tokens=(
+            arguments.qa2d_max_input_tokens
+        ),
+        generation_max_new_tokens=(
+            arguments.generation_max_new_tokens
+        ),
+        max_context_tokens=(
+            arguments.max_context_tokens
+        ),
+        max_claim_tokens=(
+            arguments.max_claim_tokens
+        ),
+        entailment_threshold=(
+            arguments.entailment_threshold
+        ),
+        contradiction_threshold=(
+            arguments.contradiction_threshold
+        ),
+        min_answer_token_coverage=(
+            arguments.min_answer_token_coverage
+        ),
+        min_claim_token_count=(
+            arguments.min_claim_token_count
+        ),
+        max_question_copy_ratio=(
+            arguments.max_question_copy_ratio
+        ),
     )
