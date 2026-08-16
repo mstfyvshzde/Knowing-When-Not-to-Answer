@@ -1,35 +1,60 @@
-name: Python Tests
+name: Python Quality Checks
 
+# Run repository-quality checks whenever main changes
+# or a pull request targets main.
 on:
   push:
     branches:
       - main
+
   pull_request:
     branches:
       - main
 
+
+# The workflow only needs permission to read repository contents.
+permissions:
+  contents: read
+
+
 jobs:
   quality:
+    name: Lint, test, and validate scripts
     runs-on: ubuntu-latest
 
     steps:
+      # Download the exact repository revision being tested.
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Use the same Python version targeted by the project tooling.
+      # pip caching speeds up repeated CI runs without changing dependencies.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
+          cache-dependency-path: requirements.txt
 
+      # Install runtime dependencies first, then development-only
+      # quality tools required by this workflow.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest pytest-cov ruff
 
+      # Lint the complete repository, including src/, tests/,
+      # experiments/, and Python scripts.
       - name: Run Ruff
         run: python -m ruff check .
 
+      # Run the canonical test suite.
+      # Coverage behavior is configured in pyproject.toml.
       - name: Run tests
         run: python -m pytest -q
+
+      # Parse every shell script without executing the scientific pipeline.
+      # This catches Bash syntax errors while avoiding expensive model inference.
+      - name: Check shell-script syntax
+        run: bash -n scripts/*.sh

@@ -1,0 +1,1043 @@
+{
+    "analysis_type": "calibration_only_fusion_weight_tuning",
+    "input": "outputs/predictions/calibration_with_question_aware_v2_and_self_verification.jsonl",
+    "split": "calibration",
+    "records": 3000,
+    "correct": 1243,
+    "incorrect": 1757,
+    "selection_rule": "Choose alpha with minimum calibration AURC; if exactly tied, choose the larger alpha; freeze before test.",
+    "formula": "confidence^alpha * verifier^(1-alpha)",
+    "alpha_interpretation": {
+        "0.0": "verifier only",
+        "1.0": "confidence only"
+    },
+    "confidence_only_aurc": 0.2922851841683286,
+    "question_aware": {
+        "best_alpha": 1.0,
+        "best_verifier_weight": 0.0,
+        "best_aurc": 0.2922851841683286,
+        "grid_step": 0.01,
+        "tie_break_rule": "minimum AURC, then larger alpha if AURC is exactly tied",
+        "grid": [
+            {
+                "alpha": 0.0,
+                "verifier_weight": 1.0,
+                "aurc": 0.3961680406342148
+            },
+            {
+                "alpha": 0.01,
+                "verifier_weight": 0.99,
+                "aurc": 0.3817229847349061
+            },
+            {
+                "alpha": 0.02,
+                "verifier_weight": 0.98,
+                "aurc": 0.3753686960644433
+            },
+            {
+                "alpha": 0.03,
+                "verifier_weight": 0.97,
+                "aurc": 0.37136808638106505
+            },
+            {
+                "alpha": 0.04,
+                "verifier_weight": 0.96,
+                "aurc": 0.36854977239718817
+            },
+            {
+                "alpha": 0.05,
+                "verifier_weight": 0.95,
+                "aurc": 0.36616776066810763
+            },
+            {
+                "alpha": 0.06,
+                "verifier_weight": 0.94,
+                "aurc": 0.3641839599937056
+            },
+            {
+                "alpha": 0.07,
+                "verifier_weight": 0.9299999999999999,
+                "aurc": 0.3624346588597268
+            },
+            {
+                "alpha": 0.08,
+                "verifier_weight": 0.92,
+                "aurc": 0.3609637754231772
+            },
+            {
+                "alpha": 0.09,
+                "verifier_weight": 0.91,
+                "aurc": 0.3594943344328935
+            },
+            {
+                "alpha": 0.1,
+                "verifier_weight": 0.9,
+                "aurc": 0.3582455089159186
+            },
+            {
+                "alpha": 0.11,
+                "verifier_weight": 0.89,
+                "aurc": 0.35711065789268726
+            },
+            {
+                "alpha": 0.12,
+                "verifier_weight": 0.88,
+                "aurc": 0.3560204445705169
+            },
+            {
+                "alpha": 0.13,
+                "verifier_weight": 0.87,
+                "aurc": 0.35504701280099993
+            },
+            {
+                "alpha": 0.14,
+                "verifier_weight": 0.86,
+                "aurc": 0.3542079336748747
+            },
+            {
+                "alpha": 0.15,
+                "verifier_weight": 0.85,
+                "aurc": 0.3534034610105507
+            },
+            {
+                "alpha": 0.16,
+                "verifier_weight": 0.84,
+                "aurc": 0.35260727468377506
+            },
+            {
+                "alpha": 0.17,
+                "verifier_weight": 0.83,
+                "aurc": 0.3518099995354581
+            },
+            {
+                "alpha": 0.18,
+                "verifier_weight": 0.8200000000000001,
+                "aurc": 0.3510362133060582
+            },
+            {
+                "alpha": 0.19,
+                "verifier_weight": 0.81,
+                "aurc": 0.3502467146066423
+            },
+            {
+                "alpha": 0.2,
+                "verifier_weight": 0.8,
+                "aurc": 0.349530615461591
+            },
+            {
+                "alpha": 0.21,
+                "verifier_weight": 0.79,
+                "aurc": 0.34888004167221576
+            },
+            {
+                "alpha": 0.22,
+                "verifier_weight": 0.78,
+                "aurc": 0.34825424909594016
+            },
+            {
+                "alpha": 0.23,
+                "verifier_weight": 0.77,
+                "aurc": 0.34757645479991306
+            },
+            {
+                "alpha": 0.24,
+                "verifier_weight": 0.76,
+                "aurc": 0.34698885241308663
+            },
+            {
+                "alpha": 0.25,
+                "verifier_weight": 0.75,
+                "aurc": 0.3464337906199468
+            },
+            {
+                "alpha": 0.26,
+                "verifier_weight": 0.74,
+                "aurc": 0.3458359691736684
+            },
+            {
+                "alpha": 0.27,
+                "verifier_weight": 0.73,
+                "aurc": 0.34523331779743793
+            },
+            {
+                "alpha": 0.28,
+                "verifier_weight": 0.72,
+                "aurc": 0.3446467454103603
+            },
+            {
+                "alpha": 0.29,
+                "verifier_weight": 0.71,
+                "aurc": 0.3440765697156402
+            },
+            {
+                "alpha": 0.3,
+                "verifier_weight": 0.7,
+                "aurc": 0.3435839640153523
+            },
+            {
+                "alpha": 0.31,
+                "verifier_weight": 0.69,
+                "aurc": 0.34303850961142646
+            },
+            {
+                "alpha": 0.32,
+                "verifier_weight": 0.6799999999999999,
+                "aurc": 0.3425569582954583
+            },
+            {
+                "alpha": 0.33,
+                "verifier_weight": 0.6699999999999999,
+                "aurc": 0.3420900110584137
+            },
+            {
+                "alpha": 0.34,
+                "verifier_weight": 0.6599999999999999,
+                "aurc": 0.3416055802667515
+            },
+            {
+                "alpha": 0.35,
+                "verifier_weight": 0.65,
+                "aurc": 0.34108957235442916
+            },
+            {
+                "alpha": 0.36,
+                "verifier_weight": 0.64,
+                "aurc": 0.3405926665870559
+            },
+            {
+                "alpha": 0.37,
+                "verifier_weight": 0.63,
+                "aurc": 0.3401425810323228
+            },
+            {
+                "alpha": 0.38,
+                "verifier_weight": 0.62,
+                "aurc": 0.3396972716355289
+            },
+            {
+                "alpha": 0.39,
+                "verifier_weight": 0.61,
+                "aurc": 0.33922324702196266
+            },
+            {
+                "alpha": 0.4,
+                "verifier_weight": 0.6,
+                "aurc": 0.3387347226380067
+            },
+            {
+                "alpha": 0.41,
+                "verifier_weight": 0.5900000000000001,
+                "aurc": 0.33826661012123316
+            },
+            {
+                "alpha": 0.42,
+                "verifier_weight": 0.5800000000000001,
+                "aurc": 0.33779178453912856
+            },
+            {
+                "alpha": 0.43,
+                "verifier_weight": 0.5700000000000001,
+                "aurc": 0.33734493264859794
+            },
+            {
+                "alpha": 0.44,
+                "verifier_weight": 0.56,
+                "aurc": 0.33682522989296404
+            },
+            {
+                "alpha": 0.45,
+                "verifier_weight": 0.55,
+                "aurc": 0.33640952155873916
+            },
+            {
+                "alpha": 0.46,
+                "verifier_weight": 0.54,
+                "aurc": 0.3359440030952859
+            },
+            {
+                "alpha": 0.47,
+                "verifier_weight": 0.53,
+                "aurc": 0.3355000879707442
+            },
+            {
+                "alpha": 0.48,
+                "verifier_weight": 0.52,
+                "aurc": 0.33506472259040526
+            },
+            {
+                "alpha": 0.49,
+                "verifier_weight": 0.51,
+                "aurc": 0.334619666967513
+            },
+            {
+                "alpha": 0.5,
+                "verifier_weight": 0.5,
+                "aurc": 0.33414522742770164
+            },
+            {
+                "alpha": 0.51,
+                "verifier_weight": 0.49,
+                "aurc": 0.33368380974058404
+            },
+            {
+                "alpha": 0.52,
+                "verifier_weight": 0.48,
+                "aurc": 0.3332253580605443
+            },
+            {
+                "alpha": 0.53,
+                "verifier_weight": 0.47,
+                "aurc": 0.33282817736308673
+            },
+            {
+                "alpha": 0.54,
+                "verifier_weight": 0.45999999999999996,
+                "aurc": 0.3323372054030103
+            },
+            {
+                "alpha": 0.55,
+                "verifier_weight": 0.44999999999999996,
+                "aurc": 0.3319248713121792
+            },
+            {
+                "alpha": 0.56,
+                "verifier_weight": 0.43999999999999995,
+                "aurc": 0.33150696307200445
+            },
+            {
+                "alpha": 0.57,
+                "verifier_weight": 0.43000000000000005,
+                "aurc": 0.3311089754061416
+            },
+            {
+                "alpha": 0.58,
+                "verifier_weight": 0.42000000000000004,
+                "aurc": 0.3306884250050638
+            },
+            {
+                "alpha": 0.59,
+                "verifier_weight": 0.41000000000000003,
+                "aurc": 0.33026945180802575
+            },
+            {
+                "alpha": 0.6,
+                "verifier_weight": 0.4,
+                "aurc": 0.3298936083764966
+            },
+            {
+                "alpha": 0.61,
+                "verifier_weight": 0.39,
+                "aurc": 0.3294386863638877
+            },
+            {
+                "alpha": 0.62,
+                "verifier_weight": 0.38,
+                "aurc": 0.329071944681854
+            },
+            {
+                "alpha": 0.63,
+                "verifier_weight": 0.37,
+                "aurc": 0.3286243500307887
+            },
+            {
+                "alpha": 0.64,
+                "verifier_weight": 0.36,
+                "aurc": 0.3281901396705234
+            },
+            {
+                "alpha": 0.65,
+                "verifier_weight": 0.35,
+                "aurc": 0.3277569825993311
+            },
+            {
+                "alpha": 0.66,
+                "verifier_weight": 0.33999999999999997,
+                "aurc": 0.327316371793166
+            },
+            {
+                "alpha": 0.67,
+                "verifier_weight": 0.32999999999999996,
+                "aurc": 0.3268985950527366
+            },
+            {
+                "alpha": 0.68,
+                "verifier_weight": 0.31999999999999995,
+                "aurc": 0.326533634282805
+            },
+            {
+                "alpha": 0.69,
+                "verifier_weight": 0.31000000000000005,
+                "aurc": 0.32617097181620175
+            },
+            {
+                "alpha": 0.7,
+                "verifier_weight": 0.30000000000000004,
+                "aurc": 0.3258020393518039
+            },
+            {
+                "alpha": 0.71,
+                "verifier_weight": 0.29000000000000004,
+                "aurc": 0.3254012198674442
+            },
+            {
+                "alpha": 0.72,
+                "verifier_weight": 0.28,
+                "aurc": 0.32502875460366565
+            },
+            {
+                "alpha": 0.73,
+                "verifier_weight": 0.27,
+                "aurc": 0.32462037929575643
+            },
+            {
+                "alpha": 0.74,
+                "verifier_weight": 0.26,
+                "aurc": 0.3242106183436203
+            },
+            {
+                "alpha": 0.75,
+                "verifier_weight": 0.25,
+                "aurc": 0.32382416919053086
+            },
+            {
+                "alpha": 0.76,
+                "verifier_weight": 0.24,
+                "aurc": 0.3234902380743712
+            },
+            {
+                "alpha": 0.77,
+                "verifier_weight": 0.22999999999999998,
+                "aurc": 0.32316744621825233
+            },
+            {
+                "alpha": 0.78,
+                "verifier_weight": 0.21999999999999997,
+                "aurc": 0.3228245554819592
+            },
+            {
+                "alpha": 0.79,
+                "verifier_weight": 0.20999999999999996,
+                "aurc": 0.3225165021030287
+            },
+            {
+                "alpha": 0.8,
+                "verifier_weight": 0.19999999999999996,
+                "aurc": 0.3221773411034995
+            },
+            {
+                "alpha": 0.81,
+                "verifier_weight": 0.18999999999999995,
+                "aurc": 0.3218857471972233
+            },
+            {
+                "alpha": 0.82,
+                "verifier_weight": 0.18000000000000005,
+                "aurc": 0.3215781229873597
+            },
+            {
+                "alpha": 0.83,
+                "verifier_weight": 0.17000000000000004,
+                "aurc": 0.32126696326330567
+            },
+            {
+                "alpha": 0.84,
+                "verifier_weight": 0.16000000000000003,
+                "aurc": 0.32098563240367617
+            },
+            {
+                "alpha": 0.85,
+                "verifier_weight": 0.15000000000000002,
+                "aurc": 0.3206425139286898
+            },
+            {
+                "alpha": 0.86,
+                "verifier_weight": 0.14,
+                "aurc": 0.3203571109001086
+            },
+            {
+                "alpha": 0.87,
+                "verifier_weight": 0.13,
+                "aurc": 0.3200247879475901
+            },
+            {
+                "alpha": 0.88,
+                "verifier_weight": 0.12,
+                "aurc": 0.3197432240486344
+            },
+            {
+                "alpha": 0.89,
+                "verifier_weight": 0.10999999999999999,
+                "aurc": 0.3194995204429044
+            },
+            {
+                "alpha": 0.9,
+                "verifier_weight": 0.09999999999999998,
+                "aurc": 0.31922465715104575
+            },
+            {
+                "alpha": 0.91,
+                "verifier_weight": 0.08999999999999997,
+                "aurc": 0.3189326907792323
+            },
+            {
+                "alpha": 0.92,
+                "verifier_weight": 0.07999999999999996,
+                "aurc": 0.3186935680257599
+            },
+            {
+                "alpha": 0.93,
+                "verifier_weight": 0.06999999999999995,
+                "aurc": 0.3184271171088056
+            },
+            {
+                "alpha": 0.94,
+                "verifier_weight": 0.06000000000000005,
+                "aurc": 0.3181968172063619
+            },
+            {
+                "alpha": 0.95,
+                "verifier_weight": 0.050000000000000044,
+                "aurc": 0.3179794305771067
+            },
+            {
+                "alpha": 0.96,
+                "verifier_weight": 0.040000000000000036,
+                "aurc": 0.3178021028289085
+            },
+            {
+                "alpha": 0.97,
+                "verifier_weight": 0.030000000000000027,
+                "aurc": 0.31766171175390345
+            },
+            {
+                "alpha": 0.98,
+                "verifier_weight": 0.020000000000000018,
+                "aurc": 0.3176817151520269
+            },
+            {
+                "alpha": 0.99,
+                "verifier_weight": 0.010000000000000009,
+                "aurc": 0.31806306108174315
+            },
+            {
+                "alpha": 1.0,
+                "verifier_weight": 0.0,
+                "aurc": 0.2922851841683286
+            }
+        ]
+    },
+    "self_verifier": {
+        "best_alpha": 1.0,
+        "best_verifier_weight": 0.0,
+        "best_aurc": 0.2922851841683286,
+        "grid_step": 0.01,
+        "tie_break_rule": "minimum AURC, then larger alpha if AURC is exactly tied",
+        "grid": [
+            {
+                "alpha": 0.0,
+                "verifier_weight": 1.0,
+                "aurc": 0.4438948728983155
+            },
+            {
+                "alpha": 0.01,
+                "verifier_weight": 0.99,
+                "aurc": 0.43183761701540563
+            },
+            {
+                "alpha": 0.02,
+                "verifier_weight": 0.98,
+                "aurc": 0.42258195216455224
+            },
+            {
+                "alpha": 0.03,
+                "verifier_weight": 0.97,
+                "aurc": 0.41491755425186605
+            },
+            {
+                "alpha": 0.04,
+                "verifier_weight": 0.96,
+                "aurc": 0.40837811303853233
+            },
+            {
+                "alpha": 0.05,
+                "verifier_weight": 0.95,
+                "aurc": 0.40252621794897836
+            },
+            {
+                "alpha": 0.06,
+                "verifier_weight": 0.94,
+                "aurc": 0.39731624989768755
+            },
+            {
+                "alpha": 0.07,
+                "verifier_weight": 0.9299999999999999,
+                "aurc": 0.3925226592615239
+            },
+            {
+                "alpha": 0.08,
+                "verifier_weight": 0.92,
+                "aurc": 0.388016497153847
+            },
+            {
+                "alpha": 0.09,
+                "verifier_weight": 0.91,
+                "aurc": 0.38392541238899625
+            },
+            {
+                "alpha": 0.1,
+                "verifier_weight": 0.9,
+                "aurc": 0.3801132703610927
+            },
+            {
+                "alpha": 0.11,
+                "verifier_weight": 0.89,
+                "aurc": 0.3767060334137107
+            },
+            {
+                "alpha": 0.12,
+                "verifier_weight": 0.88,
+                "aurc": 0.37332650232750153
+            },
+            {
+                "alpha": 0.13,
+                "verifier_weight": 0.87,
+                "aurc": 0.37022857338797666
+            },
+            {
+                "alpha": 0.14,
+                "verifier_weight": 0.86,
+                "aurc": 0.36727238927335165
+            },
+            {
+                "alpha": 0.15,
+                "verifier_weight": 0.85,
+                "aurc": 0.36451717276660467
+            },
+            {
+                "alpha": 0.16,
+                "verifier_weight": 0.84,
+                "aurc": 0.36191765756593675
+            },
+            {
+                "alpha": 0.17,
+                "verifier_weight": 0.83,
+                "aurc": 0.3593509473554499
+            },
+            {
+                "alpha": 0.18,
+                "verifier_weight": 0.8200000000000001,
+                "aurc": 0.35708204027065593
+            },
+            {
+                "alpha": 0.19,
+                "verifier_weight": 0.81,
+                "aurc": 0.35489114480836875
+            },
+            {
+                "alpha": 0.2,
+                "verifier_weight": 0.8,
+                "aurc": 0.35279019648959686
+            },
+            {
+                "alpha": 0.21,
+                "verifier_weight": 0.79,
+                "aurc": 0.350847054341409
+            },
+            {
+                "alpha": 0.22,
+                "verifier_weight": 0.78,
+                "aurc": 0.34897401521852567
+            },
+            {
+                "alpha": 0.23,
+                "verifier_weight": 0.77,
+                "aurc": 0.3470988488549163
+            },
+            {
+                "alpha": 0.24,
+                "verifier_weight": 0.76,
+                "aurc": 0.345396732097385
+            },
+            {
+                "alpha": 0.25,
+                "verifier_weight": 0.75,
+                "aurc": 0.34369441886913416
+            },
+            {
+                "alpha": 0.26,
+                "verifier_weight": 0.74,
+                "aurc": 0.3421359032984369
+            },
+            {
+                "alpha": 0.27,
+                "verifier_weight": 0.73,
+                "aurc": 0.34062666545818
+            },
+            {
+                "alpha": 0.28,
+                "verifier_weight": 0.72,
+                "aurc": 0.33927477608468126
+            },
+            {
+                "alpha": 0.29,
+                "verifier_weight": 0.71,
+                "aurc": 0.3379284765387597
+            },
+            {
+                "alpha": 0.3,
+                "verifier_weight": 0.7,
+                "aurc": 0.33663751548693877
+            },
+            {
+                "alpha": 0.31,
+                "verifier_weight": 0.69,
+                "aurc": 0.335381645914593
+            },
+            {
+                "alpha": 0.32,
+                "verifier_weight": 0.6799999999999999,
+                "aurc": 0.3341251118226076
+            },
+            {
+                "alpha": 0.33,
+                "verifier_weight": 0.6699999999999999,
+                "aurc": 0.33292278835963884
+            },
+            {
+                "alpha": 0.34,
+                "verifier_weight": 0.6599999999999999,
+                "aurc": 0.3317643640806674
+            },
+            {
+                "alpha": 0.35,
+                "verifier_weight": 0.65,
+                "aurc": 0.33068475082607174
+            },
+            {
+                "alpha": 0.36,
+                "verifier_weight": 0.64,
+                "aurc": 0.32968217025185736
+            },
+            {
+                "alpha": 0.37,
+                "verifier_weight": 0.63,
+                "aurc": 0.32860367333657603
+            },
+            {
+                "alpha": 0.38,
+                "verifier_weight": 0.62,
+                "aurc": 0.3276424153592065
+            },
+            {
+                "alpha": 0.39,
+                "verifier_weight": 0.61,
+                "aurc": 0.3266911905692517
+            },
+            {
+                "alpha": 0.4,
+                "verifier_weight": 0.6,
+                "aurc": 0.32580001562616684
+            },
+            {
+                "alpha": 0.41,
+                "verifier_weight": 0.5900000000000001,
+                "aurc": 0.32492508025140343
+            },
+            {
+                "alpha": 0.42,
+                "verifier_weight": 0.5800000000000001,
+                "aurc": 0.32409558337792177
+            },
+            {
+                "alpha": 0.43,
+                "verifier_weight": 0.5700000000000001,
+                "aurc": 0.32324942133334134
+            },
+            {
+                "alpha": 0.44,
+                "verifier_weight": 0.56,
+                "aurc": 0.32234159358958714
+            },
+            {
+                "alpha": 0.45,
+                "verifier_weight": 0.55,
+                "aurc": 0.3215021527480384
+            },
+            {
+                "alpha": 0.46,
+                "verifier_weight": 0.54,
+                "aurc": 0.3207114647146697
+            },
+            {
+                "alpha": 0.47,
+                "verifier_weight": 0.53,
+                "aurc": 0.3199404552437206
+            },
+            {
+                "alpha": 0.48,
+                "verifier_weight": 0.52,
+                "aurc": 0.3192119899384279
+            },
+            {
+                "alpha": 0.49,
+                "verifier_weight": 0.51,
+                "aurc": 0.3184776060951837
+            },
+            {
+                "alpha": 0.5,
+                "verifier_weight": 0.5,
+                "aurc": 0.3177310668468932
+            },
+            {
+                "alpha": 0.51,
+                "verifier_weight": 0.49,
+                "aurc": 0.3170655348048844
+            },
+            {
+                "alpha": 0.52,
+                "verifier_weight": 0.48,
+                "aurc": 0.3163627021033048
+            },
+            {
+                "alpha": 0.53,
+                "verifier_weight": 0.47,
+                "aurc": 0.31571762890497684
+            },
+            {
+                "alpha": 0.54,
+                "verifier_weight": 0.45999999999999996,
+                "aurc": 0.3150771799777117
+            },
+            {
+                "alpha": 0.55,
+                "verifier_weight": 0.44999999999999996,
+                "aurc": 0.31444794822227123
+            },
+            {
+                "alpha": 0.56,
+                "verifier_weight": 0.43999999999999995,
+                "aurc": 0.31373827851928704
+            },
+            {
+                "alpha": 0.57,
+                "verifier_weight": 0.43000000000000005,
+                "aurc": 0.3131418204588661
+            },
+            {
+                "alpha": 0.58,
+                "verifier_weight": 0.42000000000000004,
+                "aurc": 0.3124753585593136
+            },
+            {
+                "alpha": 0.59,
+                "verifier_weight": 0.41000000000000003,
+                "aurc": 0.31184780012394847
+            },
+            {
+                "alpha": 0.6,
+                "verifier_weight": 0.4,
+                "aurc": 0.3113003618441627
+            },
+            {
+                "alpha": 0.61,
+                "verifier_weight": 0.39,
+                "aurc": 0.3106211989745357
+            },
+            {
+                "alpha": 0.62,
+                "verifier_weight": 0.38,
+                "aurc": 0.3101214631076714
+            },
+            {
+                "alpha": 0.63,
+                "verifier_weight": 0.37,
+                "aurc": 0.3096136893538694
+            },
+            {
+                "alpha": 0.64,
+                "verifier_weight": 0.36,
+                "aurc": 0.3090658743027246
+            },
+            {
+                "alpha": 0.65,
+                "verifier_weight": 0.35,
+                "aurc": 0.30854422934029646
+            },
+            {
+                "alpha": 0.66,
+                "verifier_weight": 0.33999999999999997,
+                "aurc": 0.3080317458771009
+            },
+            {
+                "alpha": 0.67,
+                "verifier_weight": 0.32999999999999996,
+                "aurc": 0.3074794505834844
+            },
+            {
+                "alpha": 0.68,
+                "verifier_weight": 0.31999999999999995,
+                "aurc": 0.3069599929189703
+            },
+            {
+                "alpha": 0.69,
+                "verifier_weight": 0.31000000000000005,
+                "aurc": 0.3064269803465349
+            },
+            {
+                "alpha": 0.7,
+                "verifier_weight": 0.30000000000000004,
+                "aurc": 0.3058669736625777
+            },
+            {
+                "alpha": 0.71,
+                "verifier_weight": 0.29000000000000004,
+                "aurc": 0.3053867319936666
+            },
+            {
+                "alpha": 0.72,
+                "verifier_weight": 0.28,
+                "aurc": 0.3048817112854572
+            },
+            {
+                "alpha": 0.73,
+                "verifier_weight": 0.27,
+                "aurc": 0.30448363315176685
+            },
+            {
+                "alpha": 0.74,
+                "verifier_weight": 0.26,
+                "aurc": 0.3039926767422989
+            },
+            {
+                "alpha": 0.75,
+                "verifier_weight": 0.25,
+                "aurc": 0.3034904971407603
+            },
+            {
+                "alpha": 0.76,
+                "verifier_weight": 0.24,
+                "aurc": 0.30300011058320303
+            },
+            {
+                "alpha": 0.77,
+                "verifier_weight": 0.22999999999999998,
+                "aurc": 0.30247961952647606
+            },
+            {
+                "alpha": 0.78,
+                "verifier_weight": 0.21999999999999997,
+                "aurc": 0.30203262100297046
+            },
+            {
+                "alpha": 0.79,
+                "verifier_weight": 0.20999999999999996,
+                "aurc": 0.30153162528822736
+            },
+            {
+                "alpha": 0.8,
+                "verifier_weight": 0.19999999999999996,
+                "aurc": 0.30101901722530805
+            },
+            {
+                "alpha": 0.81,
+                "verifier_weight": 0.18999999999999995,
+                "aurc": 0.3006144466895346
+            },
+            {
+                "alpha": 0.82,
+                "verifier_weight": 0.18000000000000005,
+                "aurc": 0.30022298867724667
+            },
+            {
+                "alpha": 0.83,
+                "verifier_weight": 0.17000000000000004,
+                "aurc": 0.2997822687741616
+            },
+            {
+                "alpha": 0.84,
+                "verifier_weight": 0.16000000000000003,
+                "aurc": 0.2993355142119415
+            },
+            {
+                "alpha": 0.85,
+                "verifier_weight": 0.15000000000000002,
+                "aurc": 0.29879662629441167
+            },
+            {
+                "alpha": 0.86,
+                "verifier_weight": 0.14,
+                "aurc": 0.29836167733188207
+            },
+            {
+                "alpha": 0.87,
+                "verifier_weight": 0.13,
+                "aurc": 0.2979602303780778
+            },
+            {
+                "alpha": 0.88,
+                "verifier_weight": 0.12,
+                "aurc": 0.29749777481599776
+            },
+            {
+                "alpha": 0.89,
+                "verifier_weight": 0.10999999999999999,
+                "aurc": 0.29707832677444895
+            },
+            {
+                "alpha": 0.9,
+                "verifier_weight": 0.09999999999999998,
+                "aurc": 0.29671846238294364
+            },
+            {
+                "alpha": 0.91,
+                "verifier_weight": 0.08999999999999997,
+                "aurc": 0.2962701522361551
+            },
+            {
+                "alpha": 0.92,
+                "verifier_weight": 0.07999999999999996,
+                "aurc": 0.2958836269022785
+            },
+            {
+                "alpha": 0.93,
+                "verifier_weight": 0.06999999999999995,
+                "aurc": 0.2955219755790476
+            },
+            {
+                "alpha": 0.94,
+                "verifier_weight": 0.06000000000000005,
+                "aurc": 0.294950559299409
+            },
+            {
+                "alpha": 0.95,
+                "verifier_weight": 0.050000000000000044,
+                "aurc": 0.29450101522351313
+            },
+            {
+                "alpha": 0.96,
+                "verifier_weight": 0.040000000000000036,
+                "aurc": 0.2940209529212878
+            },
+            {
+                "alpha": 0.97,
+                "verifier_weight": 0.030000000000000027,
+                "aurc": 0.29362339665120984
+            },
+            {
+                "alpha": 0.98,
+                "verifier_weight": 0.020000000000000018,
+                "aurc": 0.29317522529658213
+            },
+            {
+                "alpha": 0.99,
+                "verifier_weight": 0.010000000000000009,
+                "aurc": 0.2927833109820552
+            },
+            {
+                "alpha": 1.0,
+                "verifier_weight": 0.0,
+                "aurc": 0.2922851841683286
+            }
+        ]
+    }
+}

@@ -7,7 +7,7 @@ This document defines the labels and correctness rules used in the final selecti
 The final analysis distinguishes between:
 
 - dataset answerability
-- exact-match QA correctness
+- forced-answer QA correctness
 - question-aware claim validity
 - question-aware NLI labels
 - self-verification labels
@@ -27,15 +27,37 @@ The SQuAD v2 example is unanswerable under the benchmark annotation.
 
 Answerability is inherited from the dataset and is not manually re-annotated in the final experiment.
 
-## 2. QA Correctness
+## 2. Forced-Answer QA Correctness
 
-Final QA correctness uses the same normalized exact-match logic as the evaluator.
+The five primary selective-ranking methods operate over forced-answer QA candidates.
 
-For answerable examples, a prediction is correct when its normalized text exactly matches at least one normalized reference answer.
+Canonical correctness is implemented by:
 
-For unanswerable examples, a prediction is correct only when the normalized prediction is empty.
+```text
+src.calibration.calibration_metrics.is_prediction_correct
+```
+
+For answerable examples, a candidate is correct when its normalized prediction exactly matches at least one normalized reference answer.
+
+For unanswerable examples in the forced-answer ranking experiment, the candidate is treated as incorrect.
+
+This rule is explicit: a punctuation-only forced prediction that normalizes to empty text must not be interpreted as a successful abstention.
 
 The final evaluation does not use a `PARTIALLY_CORRECT` category and does not replace exact match with manual semantic-equivalence judgment.
+
+On the final N=3,000 held-out candidate set:
+
+```text
+correct   = 1267
+incorrect = 1733
+accuracy  = 0.422333
+```
+
+### Native no-answer baseline
+
+The repository separately evaluates the pretrained QA model with its native no-answer behavior enabled. In that separate baseline, a correct abstention on an unanswerable example may count as task-level correctness.
+
+That native routing semantics must not be used to redefine the forced-answer candidate correctness used by the five primary ranking methods.
 
 ## 3. Question-Aware Claim Validity
 
@@ -146,7 +168,7 @@ No label threshold or combination weight is tuned using held-out test labels.
 The final analysis keeps the following concepts separate:
 
 - **answerability** describes the benchmark example
-- **correctness** describes exact-match agreement with the reference answer
+- **forced-answer correctness** describes the underlying QA candidate under the canonical final evaluator
 - **claim validity** describes whether the generated declarative claim is structurally usable
 - **NLI labels** describe semantic support or contradiction relative to context
 - **self-verification labels** describe the verifier's support judgment

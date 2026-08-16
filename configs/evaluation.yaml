@@ -1,124 +1,360 @@
 evaluation:
-  dataset_split: "test"                  # Değerlendirmenin test veri kümesi üzerinde yapılacağını belirtir
-  save_individual_predictions: true      # Her örnek için model tahminlerini ayrı ayrı kaydeder
-  save_summary_metrics: true             # Genel performans metriklerinin özetini kaydeder
+  dataset_split: "test"
+  # Final değerlendirme yalnızca held-out test split üzerinde yapılır.
 
-systems:
-  - "raw_baseline"                       # Doğrulama veya güven filtresi olmayan temel sistem
-  - "confidence_baseline"                # Yalnızca güven skoruna dayalı sistem
-  - "evidence_verifier"                  # Kanıt doğrulayıcı kullanan sistem
-  - "combined_framework"                 # Güven ve kanıt doğrulamasını birlikte kullanan sistem
+  protocol: "held_out_selective_qa_ranking"
+  # Final deney, QA adaylarını güvenilirlik skoruna göre sıralayan
+  # selective-QA ranking protokolünü kullanır.
+
+  primary_metric: "aurc"
+  # Ana metrik Area Under the Risk-Coverage Curve (AURC).
+  # Daha düşük AURC daha iyi selective ranking anlamına gelir.
+
+  secondary_metrics:
+    - "normalized_aurc"
+    - "matched_coverage_risk"
+    - "full_accuracy"
+  # AURC yanında normalize edilmiş AURC,
+  # eşit coverage seviyelerindeki selective risk
+  # ve tüm örnekler üzerindeki correctness oranı raporlanır.
+
+  save_individual_predictions: true
+  # Prediction-level artifact'lerin korunmasını sağlar.
+
+  save_summary_metrics: true
+  # Final evaluation özetlerinin JSON/CSV olarak kaydedilmesini sağlar.
+
+
+ranking_methods:
+  - name: "Confidence only"
+    score: "calibrated_confidence"
+    # Temperature-scaled QA confidence ile sıralama.
+
+  - name: "Question-aware semantic V2"
+    score: "qa_entailment_probability"
+    # Question + predicted answer + context üzerinden
+    # oluşturulan NLI support skoru.
+    # Geçersiz claim'ler score=0 alır.
+
+  - name: "Confidence + question-aware semantic V2"
+    score: "sqrt(calibrated_confidence * qa_entailment_probability)"
+    # Confidence ve question-aware verifier için
+    # sabit eşit ağırlıklı geometric mean.
+
+  - name: "Self-verifier only"
+    score: "normalized(self_verification_score)"
+    # Kodda tarihsel olarak self-verifier adı kullanılır.
+    # Bu sinyal ikinci bir NLI answer-support verifier'dır.
+    # Raw [-1, 1] skor [0, 1] aralığına dönüştürülür.
+
+  - name: "Confidence + self-verifier"
+    score: "sqrt(calibrated_confidence * normalized(self_verification_score))"
+    # Confidence ile normalized answer-support/self-verifier skorunun
+    # sabit eşit ağırlıklı geometric mean'i.
+
 
 correctness:
-  metric: "exact_match_and_f1"           # Doğruluğu Exact Match ve token F1 ile ölçer
-  report_exact_match: true               # Cevabın referans cevapla tamamen eşleşme oranını raporlar
-  report_token_f1: true                  # Tahmin ve gerçek cevap arasındaki token benzerliğini raporlar
+  definition: "canonical_binary_qa_correctness"
+  # Ranking deneyindeki her aday correct/incorrect olarak değerlendirilir.
+
+  answerable_rule: "normalized_exact_match"
+  # Answerable örneklerde prediction,
+  # normalize edilmiş gold cevaplardan en az biriyle exact-match yapmalıdır.
+
+  unanswerable_rule: "explicit_abstain_else_incorrect_for_forced_answer"
+  # Explicit ABSTAIN routing kararı varsa unanswerable örnek doğru olabilir.
+  # Forced-answer candidate değerlendirmesinde ise unanswerable örnek
+  # doğru cevap olarak sayılmaz.
+
+  report_exact_match: true
+  # Lexical Exact Match gerektiğinde ayrıca raporlanabilir.
+
+  report_token_f1: true
+  # Token F1 özellikle native/no-answer baseline gibi
+  # QA kalite analizlerinde ayrıca raporlanabilir.
+
 
 selective_prediction:
-  report_coverage: true                  # Sistemin cevap verdiği örneklerin oranını raporlar
-  report_abstention_rate: true           # Sistemin cevap vermekten kaçındığı örneklerin oranını raporlar
-  report_selective_risk: true            # Cevap verilen örneklerdeki hata oranını raporlar
+  enabled: true
+  # Selective prediction değerlendirmesini aktif eder.
+
+  ranking_direction: "descending"
+  # Daha yüksek güvenilirlik skoru önce sıralanır.
+
+  tie_break: "original_record_index_ascending"
+  # Eşit score durumunda deterministik original-index tie-break kullanılır.
+
+  report_coverage: true
+  # Her operating point'teki coverage raporlanır.
+
+  report_selective_risk: true
+  # Cevaplanan prefix içindeki hata oranı raporlanır.
+
+  report_aurc: true
+  # Full risk-coverage curve üzerinden AURC hesaplanır.
+
+  report_normalized_aurc: true
+  # Oracle ve random-ranking referanslarına göre normalized AURC raporlanır.
 
   coverage_levels:
-    - 0.30                               # Veri kümesinin %30'una cevap verildiğindeki performans
-    - 0.50                               # Veri kümesinin %50'sine cevap verildiğindeki performans
-    - 0.70                               # Veri kümesinin %70'ine cevap verildiğindeki performans
-    - 0.80                               # Veri kümesinin %80'ine cevap verildiğindeki performans
-    - 0.90                               # Veri kümesinin %90'ına cevap verildiğindeki performans
-    - 1.00                               # Tüm sorulara cevap verildiğindeki performans
+    - 0.10
+    - 0.20
+    - 0.30
+    - 0.40
+    - 0.50
+    - 0.60
+    - 0.70
+    - 0.80
+    - 0.90
+    - 1.00
+  # Sistemler aynı coverage seviyelerinde karşılaştırılır.
 
-  compare_at_equal_coverage: true        # Sistemleri aynı cevaplama oranında karşılaştırır
+  compare_at_equal_coverage: true
+  # Ranking yöntemleri aynı cevaplama oranında karşılaştırılır.
 
-reliability:
-  report_unsupported_answer_rate: true   # Kanıt tarafından desteklenmeyen cevapların oranını raporlar
-  report_false_confidence_rate: true     # Yanlış olmasına rağmen yüksek güvenli cevapların oranını raporlar
-  report_unnecessary_abstention_rate: true # Doğru cevap verebilecekken kaçınılan örneklerin oranını raporlar
-
-  high_confidence_threshold: 0.80        # Bu değerin üzerindeki skorları yüksek güven kabul eder
-  high_confidence_threshold_is_provisional: true
-                                        # Yüksek güven eşiğinin geçici ve ayarlanabilir olduğunu belirtir
-
-calibration:
-  enabled: true                          # Güven skorlarının doğrulukla uyumunu değerlendirmeyi açar
-
-  metrics:
-    - "expected_calibration_error"       # Ortalama güven-doğruluk farkını ölçer
-    - "maximum_calibration_error"        # Binler arasındaki en büyük güven-doğruluk farkını ölçer
-    - "brier_score"                      # Olasılık tahminlerinin karesel hatasını ölçer
-    - "negative_log_likelihood"          # Doğru sonuçlara atanan olasılıkların log kaybını ölçer
-
-  number_of_bins: 15                     # Kalibrasyon hesaplamasında kullanılacak aralık sayısı
-  binning_strategy: "equal_width"        # 0–1 güven aralığını eşit genişlikte bölümlere ayırır
-
-classification:
-  unreliable_answer_is_positive_class: true
-                                        # Güvenilmez cevabı sınıflandırmada pozitif sınıf kabul eder
-
-  metrics:
-    - "precision"                        # Güvenilmez denilen cevapların ne kadarının gerçekten güvenilmez olduğunu ölçer
-    - "recall"                           # Gerçek güvenilmez cevapların ne kadarının tespit edildiğini ölçer
-    - "f1"                               # Precision ve recall değerlerinin harmonik ortalamasıdır
-    - "accuracy"                         # Toplam doğru sınıflandırma oranını ölçer
-    - "confusion_matrix"                 # Doğru ve yanlış sınıflandırma sayılarını tablo halinde gösterir
-    - "roc_auc"                          # Farklı eşiklerde sınıflandırma ayırma başarısını ölçer
-    - "pr_auc"                           # Precision-recall eğrisi altındaki alanı ölçer
 
 risk_coverage:
-  enabled: true                          # Risk-kapsama analizini aktif eder
-  number_of_thresholds: 100              # Eğriyi oluşturmak için kullanılacak güven eşiği sayısı
-  calculate_area_under_curve: true       # Risk-kapsama eğrisinin altındaki alanı hesaplar
-  save_curve_data: true                  # Eğriyi oluşturan sayısal verileri kaydeder
-  save_figure: true                      # Risk-kapsama grafiğini dosya olarak kaydeder
+  enabled: true
+  # Full risk-coverage analizi aktif edilir.
+
+  curve_definition: "every_non_empty_ranked_prefix"
+  # Canonical AURC, sıralanmış listenin her non-empty prefix'indeki
+  # risk değerlerinin aritmetik ortalaması üzerinden hesaplanır.
+
+  calculate_aurc: true
+  # Area Under the Risk-Coverage Curve hesaplanır.
+
+  lower_is_better: true
+  # Daha düşük AURC daha iyi selective ranking demektir.
+
+  save_curve_data: true
+  # Full risk-coverage curve CSV olarak kaydedilir.
+
+  save_figure: true
+  # Risk-coverage figure kaydedilir.
+
+
+sample_size_analysis:
+  enabled: true
+  # Final yöntemin sample-size stabilitesi incelenir.
+
+  nested: true
+  # Daha küçük örnek kümeleri daha büyük kümelerin subset'idir.
+
+  sample_sizes:
+    - 200
+    - 500
+    - 1000
+    - 2000
+    - 3000
+  # Canonical nested evaluation:
+  # 200 ⊂ 500 ⊂ 1000 ⊂ 2000 ⊂ 3000.
+
+  order_seed: 17
+  # Tek deterministic record order için kullanılan seed.
+
+  tune_parameters_from_results: false
+  # Held-out sample-size sonuçları model veya fusion tuning için kullanılmaz.
+
+
+calibration:
+  enabled: true
+  # Confidence probability calibration ayrıca değerlendirilir.
+
+  fitted_on_split: "calibration"
+  # Temperature yalnızca calibration split üzerinde fit edilir.
+
+  evaluated_on_split: "test"
+  # Frozen temperature held-out test üzerinde yalnızca değerlendirilir.
+
+  metrics:
+    - "expected_calibration_error"
+    - "maximum_calibration_error"
+    - "brier_score"
+    - "negative_log_likelihood"
+  # Probability calibration kalitesini ölçen ana metrikler.
+
+  number_of_bins: 10
+  # Canonical held-out calibration raporlarında 10 equal-width bin kullanılır.
+
+  binning_strategy: "equal_width"
+  # [0, 1] confidence aralığı eşit genişlikte bölünür.
+
+  test_labels_used_for_fitting: false
+  # Held-out test correctness temperature fitting'i etkilemez.
+
+
+fixed_fusions:
+  question_aware:
+    rule: "equal_weight_geometric_mean"
+    confidence_weight: 0.50
+    verifier_weight: 0.50
+    # Ana ablation karşılaştırmasındaki sabit confidence + QA fusion.
+
+  answer_support:
+    rule: "equal_weight_geometric_mean"
+    confidence_weight: 0.50
+    verifier_weight: 0.50
+    # Ana ablation karşılaştırmasındaki sabit confidence + self-verifier fusion.
+
+
+fusion_weight_tuning:
+  enabled: true
+  # Verifier'a ağırlık vermenin calibration split'te faydalı olup olmadığı
+  # ayrıca kontrol edilir.
+
+  dataset_split: "calibration"
+  # Alpha seçimi yalnızca calibration data üzerinde yapılır.
+
+  objective: "minimize_aurc"
+  # Calibration AURC minimum yapılır.
+
+  formula: "confidence^alpha * verifier^(1-alpha)"
+  # alpha=1 confidence-only,
+  # alpha=0 verifier-only anlamına gelir.
+
+  alpha_min: 0.00
+  alpha_max: 1.00
+  alpha_step: 0.01
+  # 0.00–1.00 arası 0.01 adımlı grid search.
+
+  tie_break: "prefer_larger_alpha"
+  # AURC tam eşitse daha confidence-heavy çözüm seçilir.
+
+  tune_on_test_set: false
+  # Held-out test labels fusion weight seçiminde kullanılmaz.
+
 
 statistical_analysis:
-  enabled: true                          # İstatistiksel analizleri aktif eder
-  confidence_level: 0.95                 # %95 güven aralığı kullanılacağını belirtir
-  bootstrap_iterations: 1000             # Bootstrap örnekleme işleminin tekrar sayısı
-  bootstrap_seed: 42                     # Bootstrap sonuçlarının tekrar üretilebilir olmasını sağlar
+  enabled: true
+  # Final AURC sonuçlarının belirsizliği bootstrap ile değerlendirilir.
 
-  paired_comparisons: true               # Sistemleri aynı örnekler üzerinde eşleştirilmiş şekilde karşılaştırır
-  multiple_comparison_correction: false  # Çoklu karşılaştırmalarda hata düzeltmesi uygulamaz
+  method: "paired_nonparametric_bootstrap"
+  # Tüm yöntemler aynı resampled example index'leri üzerinde değerlendirilir.
+
+  confidence_level: 0.95
+  # %95 percentile confidence interval.
+
+  bootstrap_samples: 5000
+  # Canonical final analizde 5000 bootstrap replicate kullanılır.
+
+  bootstrap_seed: 17
+  # Bootstrap resampling seed'i.
+
+  order_seed: 17
+  # Bootstrap öncesindeki deterministic base-order seed'i.
+
+  paired_comparisons: true
+  # Alternatif method - confidence AURC farkları paired hesaplanır.
+
+  baseline_method: "Confidence only"
+  # Delta AURC karşılaştırmalarının referans yöntemi.
+
+  report_delta_aurc: true
+  # Her alternatif yöntem için confidence-only'e karşı ΔAURC raporlanır.
+
+  multiple_comparison_correction: false
+  # Bu çalışma formal çoklu hipotez testi yapmaz.
+  # Bootstrap interval'leri uncertainty/descriptive comparison amacıyla kullanılır.
+
+
+diagnostics:
+  enabled: true
+  # Final ranking davranışını açıklamak için diagnostik analizleri etkinleştirir.
+
+  high_entailment_threshold: 0.80
+  # Question-aware verifier için diagnostik threshold.
+  # Bu değer final decision threshold değildir ve AURC'yi değiştirmez.
+
+  rank_flip_analysis: true
+  # Confidence ile verifier fusion arasındaki correct-vs-incorrect
+  # pair ordering değişiklikleri incelenir.
+
+  tie_aware_rank_flip_analysis: true
+  # Equal verifier scores keyfi olarak fixed/harmed sayılmaz.
+
+  error_analysis: true
+  # High-confidence incorrect ve verifier failure örnekleri ayrıca incelenir.
+
 
 subgroup_analysis:
-  enabled: true                          # Alt grup bazlı performans analizini aktif eder
+  enabled: true
+  # Answerability bazında ayrı performans analizi yapılabilir.
 
   groups:
-    - "answerable"                       # Cevaplanabilir sorular için ayrı analiz yapar
-    - "unanswerable"                     # Cevaplanamaz sorular için ayrı analiz yapar
+    - "answerable"
+    - "unanswerable"
 
-  report_sample_sizes: true              # Her alt gruptaki örnek sayısını raporlar
-  report_group_metrics: true             # Her alt grup için performans metriklerini raporlar
+  report_sample_sizes: true
+  # Her subgroup'un N değeri raporlanır.
 
-error_analysis:
-  enabled: true                          # Hata türlerine göre ayrıntılı analiz yapar
+  report_group_metrics: true
+  # Özellikle native no-answer baseline için subgroup metrics raporlanır.
 
-  categories:
-    - "high_confidence_incorrect"        # Yüksek güvenli fakat yanlış cevaplar
-    - "unsupported_answer"               # Kanıt tarafından desteklenmeyen cevaplar
-    - "unnecessary_abstention"           # Cevap verilebilecekken sistemin kaçınması
-    - "missed_unanswerable_question"     # Cevaplanamaz sorunun cevaplanabilir sanılması
-    - "incorrect_evidence_decision"      # Kanıt doğrulayıcının yanlış karar vermesi
-    - "calibration_failure"              # Güven skorunun gerçek doğrulukla uyumsuz olması
 
 reporting:
-  decimal_places: 4                      # Sayısal sonuçları virgülden sonra dört basamakla gösterir
-  include_sample_size: true              # Raporlara örnek sayısını ekler
-  include_confidence_intervals: true     # Raporlara güven aralıklarını ekler
-  include_thresholds: true               # Kullanılan eşik değerlerini rapora ekler
-  include_model_version: true            # Kullanılan model sürümünü rapora ekler
-  include_dataset_version: true          # Kullanılan veri kümesi sürümünü rapora ekler
-  include_config_path: true              # Kullanılan yapılandırma dosyasının yolunu rapora ekler
+  decimal_places: 6
+  # Publication-facing AURC değerlerinde altı decimal basamak korunur.
+
+  include_sample_size: true
+  # Her sonuçta N belirtilir.
+
+  include_confidence_intervals: true
+  # Bootstrap confidence interval'leri raporlanır.
+
+  include_score_definition: true
+  # Her ranking methodunun kullandığı score field/formula belirtilir.
+
+  include_seed: true
+  # Reproducibility seed'leri raporlanır.
+
+  include_model_version: true
+  # Model identifier/version bilgisi raporlanır.
+
+  include_dataset_version: true
+  # Dataset identifier/revision bilgisi mümkün olduğunda raporlanır.
+
 
 outputs:
-  metrics_file: "outputs/tables/evaluation_metrics.json"
-                                        # Genel değerlendirme metriklerinin kaydedileceği JSON dosyası
-  comparison_table: "outputs/tables/system_comparison.csv"
-                                        # Sistem karşılaştırma tablosunun kaydedileceği CSV dosyası
-  risk_coverage_data: "outputs/tables/risk_coverage.csv"
-                                        # Risk-kapsama eğrisi verilerinin kaydedileceği CSV dosyası
-  risk_coverage_figure: "outputs/figures/risk_coverage_curve.png"
-                                        # Risk-kapsama grafiğinin kaydedileceği görsel dosyası
-  calibration_figure: "outputs/figures/calibration_curve.png"
-                                        # Kalibrasyon eğrisinin kaydedileceği görsel dosyası
-  confusion_matrix_figure: "outputs/figures/confusion_matrix.png"
-                                        # Karmaşıklık matrisinin kaydedileceği görsel dosyası
+  final_prediction_file: "outputs/predictions/test_with_question_aware_v2_and_self_verification.jsonl"
+  # Beş canonical ranking methodunu değerlendirmek için kullanılan
+  # final held-out prediction artifact'i.
+
+  final_evaluation_dir: "outputs/evaluation/final_sample_size_comparison"
+  # Canonical nested held-out evaluation ana klasörü.
+
+  final_n3000_dir: "outputs/evaluation/final_sample_size_comparison/n_3000"
+  # Publication-facing N=3000 evaluation artifact'leri.
+
+  ablation_summary: "outputs/evaluation/final_sample_size_comparison/n_3000/ablation_summary.csv"
+  # Beş ana method için accuracy, AURC ve normalized AURC.
+
+  matched_coverage: "outputs/evaluation/final_sample_size_comparison/n_3000/matched_coverage.csv"
+  # Methodların aynı coverage seviyelerindeki selective-risk sonuçları.
+
+  risk_coverage_data: "outputs/evaluation/final_sample_size_comparison/n_3000/risk_coverage_curves.csv"
+  # N=3000 full risk-coverage curve verisi.
+
+  risk_coverage_figure: "outputs/evaluation/final_sample_size_comparison/n_3000/risk_coverage_curves.png"
+  # N=3000 risk-coverage plot.
+
+  bootstrap_summary_csv: "outputs/evaluation/final_sample_size_comparison/bootstrap/bootstrap_aurc_summary.csv"
+  # 5000-sample paired bootstrap sonuçları.
+
+  bootstrap_summary_json: "outputs/evaluation/final_sample_size_comparison/bootstrap/bootstrap_aurc_summary.json"
+  # Bootstrap sonuçlarının JSON kopyası.
+
+  calibration_before: "outputs/tables/test_calibration_before.json"
+  # Frozen temperature uygulanmadan önce held-out calibration metrics.
+
+  calibration_after: "outputs/tables/test_calibration_after.json"
+  # Frozen temperature uygulandıktan sonra held-out calibration metrics.
+
+  fusion_weight_tuning: "outputs/tables/fusion_weight_tuning.json"
+  # Calibration-only alpha grid-search sonuçları.
+
+  calibration_figure: "assets/figures/calibration_curve.png"
+  # Paper/README için canonical calibration figure.
+
+  ablation_figure: "assets/figures/ablation_results.png"
+  # Paper/README için canonical final ablation figure.

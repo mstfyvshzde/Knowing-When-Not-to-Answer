@@ -1,9 +1,29 @@
 cff-version: 1.2.0
+
 message: "If you use this software or research artifact, please cite it as below."
+
 title: "Knowing When Not to Answer"
+
 type: software
+
 authors:
   - family-names: "Mustafayev"
     given-names: "Shahzada"
+
+abstract: >-
+  Research software for studying selective extractive question answering
+  with abstention. The project evaluates confidence-based ranking,
+  probability calibration, and NLI-based answer-support verification
+  using risk-coverage analysis on SQuAD 2.0.
+
+keywords:
+  - "selective question answering"
+  - "abstention"
+  - "risk-coverage"
+  - "confidence calibration"
+  - "natural language inference"
+  - "SQuAD 2.0"
+
 repository-code: "https://github.com/mstfyvshzde/Knowing-When-Not-to-Answer"
+
 license: "MIT"

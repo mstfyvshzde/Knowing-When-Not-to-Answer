@@ -4,12 +4,15 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
 .coverage
 coverage.xml
 htmlcov/
+
 
 # ============================================================
 # Virtual environments
@@ -19,45 +22,59 @@ venv/
 env/
 ENV/
 
+
 # ============================================================
 # Environment variables and secrets
 # ============================================================
 .env
 .env.*
 !.env.example
+
 *.pem
 *.key
 *.crt
+
 secrets.*
 credentials.*
+
 
 # ============================================================
 # Operating systems and editors
 # ============================================================
 .DS_Store
 Thumbs.db
+
 .vscode/
 .idea/
+
 *.swp
 *.swo
 *~
+
 
 # ============================================================
 # Jupyter
 # ============================================================
 .ipynb_checkpoints/
 
+
 # ============================================================
-# Build and package artefacts
+# Build and package artifacts
 # ============================================================
 build/
 dist/
 *.egg-info/
 
+
 # ============================================================
 # Research datasets
-# Keep only directory placeholders and documentation.
 # ============================================================
+#
+# Raw and processed datasets are intentionally not version-controlled.
+# They can be reconstructed using the repository's data-preparation scripts.
+#
+# Only directory placeholders are retained.
+
 data/raw/*
 data/processed/*
 data/external/*
@@ -65,42 +82,113 @@ data/external/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/external/.gitkeep
-!data/README.md
 
-# Legacy dataset directory
+
+# Legacy dataset locations retained only for compatibility.
 datasets/raw/*
 datasets/processed/*
 datasets/external/*
 
+
 # ============================================================
-# Generated predictions and logs
-# These are reproducible and may be large.
+# Large generated prediction artifacts
 # ============================================================
+#
+# Prediction-level JSONL files can be large and are reproducible from
+# the documented model and experiment pipeline.
+#
+# Lightweight aggregate results are retained elsewhere in outputs/.
+
 outputs/predictions/*
 !outputs/predictions/.gitkeep
+
+
+# ============================================================
+# Runtime logs
+# ============================================================
 
 outputs/logs/*
 !outputs/logs/.gitkeep
 
-# ============================================================
-# Temporary files
-# ============================================================
-*.tmp
-*.temp
-*.bak
 
-# Large intermediate analysis records
+# ============================================================
+# Legacy/generated figure directory
+# ============================================================
+#
+# Publication-facing figures are stored in assets/figures/.
+# outputs/figures/ is retained only as a directory placeholder.
+
+outputs/figures/*
+!outputs/figures/.gitkeep
+
+
+# ============================================================
+# Analysis intermediates
+# ============================================================
+#
+# Large record-level analysis artifacts are reproducible and are not tracked.
+# Lightweight JSON/CSV summaries may remain version-controlled.
+
 outputs/analysis/**/*.jsonl
 outputs/analysis/**/annotation_template.csv
 
-# Placeholder/example artefacts
+
+# ============================================================
+# Evaluation intermediates
+# ============================================================
+#
+# Canonical evaluation summaries, CSV files, JSON reports, and figures under
+# outputs/evaluation/ ARE intentionally version-controlled.
+#
+# Nested subset JSONL files are excluded because they are deterministic
+# reconstructions of the final held-out prediction set.
+
+outputs/evaluation/**/subset.jsonl
+
+
+# ============================================================
+# Lightweight canonical experiment tables
+# ============================================================
+#
+# Ignore arbitrary/generated table files by default, then explicitly retain
+# the small final artifacts needed to document and reproduce the reported
+# experiment protocol.
+
+outputs/tables/*
+!outputs/tables/.gitkeep
+
+!outputs/tables/temperature_scaling_parameters.json
+# Temperature fitted on the calibration split and frozen for held-out test.
+
+!outputs/tables/test_calibration_before.json
+# Held-out confidence-calibration metrics before temperature scaling.
+
+!outputs/tables/test_calibration_after.json
+# Held-out confidence-calibration metrics after frozen temperature scaling.
+
+!outputs/tables/fusion_weight_tuning.json
+# Calibration-only verifier-fusion alpha search.
+
+!outputs/tables/native_no_answer_baseline_metrics.json
+# Aggregate and answerability-specific native SQuAD2 baseline metrics.
+
+!outputs/tables/rank_flip_analysis.json
+# Tie-aware correct-vs-incorrect pair ranking diagnostics.
+
+
+# ============================================================
+# Placeholder/example artifacts
+# ============================================================
+
 outputs/tables/example.csv
 outputs/predictions/example.json
 outputs/predictions/example.jsonl
 
-!outputs/tables/
-outputs/tables/*
-!outputs/tables/random_abstention_multi_seed_metrics.json
 
-# Reproducible nested evaluation subsets
-outputs/evaluation/**/subset.jsonl
+# ============================================================
+# Temporary and backup files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak

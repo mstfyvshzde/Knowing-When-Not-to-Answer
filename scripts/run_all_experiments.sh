@@ -518,6 +518,21 @@ if [[ "$LIMIT" == "3000" ]]; then
 
 
     # -----------------------------------------------------------------------
+    # Canonical final verifier error analysis
+    # -----------------------------------------------------------------------
+    #
+    # Regenerate the lightweight held-out diagnostic summary from the final
+    # prediction file using the same canonical forced-answer correctness
+    # function as the main evaluation. This stage performs no model inference
+    # and does not tune any experimental parameter.
+
+    echo
+    echo "Generating canonical final verifier error analysis..."
+
+    python -m src.analysis.generate_final_error_analysis
+
+
+    # -----------------------------------------------------------------------
     # Tie-aware rank diagnostics
     # -----------------------------------------------------------------------
     #

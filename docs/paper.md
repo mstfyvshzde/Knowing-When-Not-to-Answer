@@ -50,14 +50,14 @@ The primary metric is AURC. Lower AURC indicates better selective ranking. Norma
 
 ## 6. Results
 
-Final held-out exact-match accuracy is `0.4223`.
+Final held-out exact-match accuracy is `0.422333`.
 
 | Method | AURC | Normalized AURC |
 |---|---:|---:|
-| Confidence only | **0.292379** | **0.218555** |
+| Confidence only | **0.292379** | **0.216109** |
 | Confidence + self-verifier | 0.309120 | 0.262110 |
-| Confidence + question-aware semantic V2 | 0.339417 | 0.347915 |
-| Question-aware semantic V2 | 0.394397 | 0.498982 |
+| Confidence + question-aware semantic V2 | 0.339417 | 0.345358 |
+| Question-aware semantic V2 | 0.394644 | 0.497105 |
 | Self-verifier only | 0.433892 | 0.604947 |
 
 Confidence only has the lowest AURC at N=500, 1,000, 2,000, and 3,000; confidence + self-verifier is slightly better at N=200.
@@ -73,19 +73,19 @@ For each non-baseline method, `Delta AURC = method AURC - confidence-only AURC`.
 | Method | Delta AURC | 95% CI |
 |---|---:|---:|
 | Confidence + self-verifier | +0.016741 | [0.008561, 0.024773] |
-| Confidence + question-aware semantic V2 | +0.047038 | [0.036347, 0.057295] |
-| Question-aware semantic V2 | +0.102019 | [0.086097, 0.118102] |
+| Confidence + question-aware semantic V2 | +0.047038 | [0.036312, 0.057263] |
+| Question-aware semantic V2 | +0.102265 | [0.086357, 0.118286] |
 | Self-verifier only | +0.141513 | [0.124280, 0.159087] |
 
 All intervals remain above zero. Since lower AURC is better, this supports the stability of the confidence-only advantage on this held-out test set. It is not a universal significance claim beyond this experimental setting.
 
 ## 8. Error Analysis
 
-The final prediction set contains 1,270 exact-match correct and 1,730 incorrect predictions.
+The final prediction set contains 1,267 exact-match correct and 1,733 incorrect predictions.
 
-Question-aware labels are distributed as 1,622 `ENTAILMENT`, 713 `CONTRADICTION`, 332 `NEUTRAL`, and 333 `INVALID_CLAIM`. Despite the diagnostic value of these labels, 686 entailment-labeled examples are incorrect. At entailment probability at least `0.8`, 464 incorrect predictions remain. Conversely, 276 correct predictions have entailment probability at most `0.2`.
+Question-aware labels are distributed as 1,622 `ENTAILMENT`, 713 `CONTRADICTION`, 332 `NEUTRAL`, and 333 `INVALID_CLAIM`. Despite the diagnostic value of these labels, 686 entailment-labeled examples are incorrect. At entailment probability at least `0.8`, 464 incorrect predictions remain. Conversely, 273 correct predictions have entailment probability at most `0.2`.
 
-Self-verification produces 886 `SUPPORTED`, 1,791 `UNCERTAIN`, and 323 `REJECTED` examples. However, 344 incorrect predictions are still labeled `SUPPORTED`, while 712 correct predictions are labeled `UNCERTAIN`.
+Self-verification produces 886 `SUPPORTED`, 1,791 `UNCERTAIN`, and 323 `REJECTED` examples. However, 344 incorrect predictions are still labeled `SUPPORTED`, while 711 correct predictions are labeled `UNCERTAIN`.
 
 The question-aware path produces 333 invalid claims. The most frequent validation reason is `ANSWER_NOT_PRESERVED` with 309 occurrences. Validation reasons are not mutually exclusive.
 
@@ -115,7 +115,7 @@ Final lightweight evaluation and bootstrap artifacts are retained under `outputs
 
 Adding semantic or self-verification signals does not necessarily improve selective QA ranking over a strong calibrated-confidence baseline.
 
-In this SQuAD v2 extractive-QA experiment, confidence only achieves the best global AURC across all tested sample sizes, and paired bootstrap analysis supports the stability of that result on the held-out test set. The broader lesson is methodological: additional verification complexity should be judged by whether it improves the final selective ranking, not merely by whether the verifier appears informative on individual examples.
+In this SQuAD v2 extractive-QA experiment, confidence only achieves the best global AURC at N=500, 1,000, 2,000, and 3,000, while confidence + self-verifier is slightly better at N=200, and paired bootstrap analysis supports the stability of that result on the held-out test set. The broader lesson is methodological: additional verification complexity should be judged by whether it improves the final selective ranking, not merely by whether the verifier appears informative on individual examples.
 
 ## 13. References
 

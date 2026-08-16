@@ -1,79 +1,81 @@
 {
-  "input_path": "outputs/predictions/test_with_question_aware_v2_and_self_verification.jsonl",
-  "total_records": 3000,
-  "correct_predictions": 1270,
-  "incorrect_predictions": 1730,
-  "full_accuracy": 0.42333333333333334,
-  "qa_claim_validity": {
-    "False": {
-      "count": 333,
-      "correct": 144,
-      "incorrect": 189,
-      "accuracy": 0.43243243243243246
+    "input_path": "outputs/predictions/test_with_question_aware_v2_and_self_verification.jsonl",
+    "analysis_type": "canonical_final_verifier_error_analysis",
+    "correctness_definition": "src.calibration.calibration_metrics.is_prediction_correct",
+    "total_records": 3000,
+    "correct_predictions": 1267,
+    "incorrect_predictions": 1733,
+    "full_accuracy": 0.42233333333333334,
+    "qa_claim_validity": {
+        "False": {
+            "count": 333,
+            "correct": 144,
+            "incorrect": 189,
+            "accuracy": 0.43243243243243246
+        },
+        "True": {
+            "count": 2667,
+            "correct": 1123,
+            "incorrect": 1544,
+            "accuracy": 0.42107236595425573
+        }
     },
-    "True": {
-      "count": 2667,
-      "correct": 1126,
-      "incorrect": 1541,
-      "accuracy": 0.42219722534683163
+    "qa_nli_label": {
+        "CONTRADICTION": {
+            "count": 713,
+            "correct": 54,
+            "incorrect": 659,
+            "accuracy": 0.07573632538569425
+        },
+        "ENTAILMENT": {
+            "count": 1622,
+            "correct": 936,
+            "incorrect": 686,
+            "accuracy": 0.5770653514180024
+        },
+        "INVALID_CLAIM": {
+            "count": 333,
+            "correct": 144,
+            "incorrect": 189,
+            "accuracy": 0.43243243243243246
+        },
+        "NEUTRAL": {
+            "count": 332,
+            "correct": 133,
+            "incorrect": 199,
+            "accuracy": 0.4006024096385542
+        }
+    },
+    "self_verification_label": {
+        "REJECTED": {
+            "count": 323,
+            "correct": 14,
+            "incorrect": 309,
+            "accuracy": 0.043343653250773995
+        },
+        "SUPPORTED": {
+            "count": 886,
+            "correct": 542,
+            "incorrect": 344,
+            "accuracy": 0.6117381489841986
+        },
+        "UNCERTAIN": {
+            "count": 1791,
+            "correct": 711,
+            "incorrect": 1080,
+            "accuracy": 0.3969849246231156
+        }
+    },
+    "invalid_claim_reasons": {
+        "ANSWER_NOT_PRESERVED": 309,
+        "ANSWER_ONLY_FRAGMENT": 3,
+        "NEGATION_NOT_PRESERVED": 5,
+        "NUMBER_NOT_PRESERVED": 106,
+        "QUESTION_FORM": 18,
+        "TOO_SHORT": 3
+    },
+    "diagnostic_counts": {
+        "high_entailment_incorrect_ge_0.8": 464,
+        "low_entailment_correct_le_0.2": 273
     }
-  },
-  "qa_nli_label": {
-    "CONTRADICTION": {
-      "count": 713,
-      "correct": 57,
-      "incorrect": 656,
-      "accuracy": 0.07994389901823282
-    },
-    "ENTAILMENT": {
-      "count": 1622,
-      "correct": 936,
-      "incorrect": 686,
-      "accuracy": 0.5770653514180024
-    },
-    "INVALID_CLAIM": {
-      "count": 333,
-      "correct": 144,
-      "incorrect": 189,
-      "accuracy": 0.43243243243243246
-    },
-    "NEUTRAL": {
-      "count": 332,
-      "correct": 133,
-      "incorrect": 199,
-      "accuracy": 0.4006024096385542
-    }
-  },
-  "self_verification_label": {
-    "REJECTED": {
-      "count": 323,
-      "correct": 16,
-      "incorrect": 307,
-      "accuracy": 0.04953560371517028
-    },
-    "SUPPORTED": {
-      "count": 886,
-      "correct": 542,
-      "incorrect": 344,
-      "accuracy": 0.6117381489841986
-    },
-    "UNCERTAIN": {
-      "count": 1791,
-      "correct": 712,
-      "incorrect": 1079,
-      "accuracy": 0.3975432719151312
-    }
-  },
-  "invalid_claim_reasons": {
-    "ANSWER_NOT_PRESERVED": 309,
-    "NUMBER_NOT_PRESERVED": 106,
-    "QUESTION_FORM": 18,
-    "NEGATION_NOT_PRESERVED": 5,
-    "ANSWER_ONLY_FRAGMENT": 3,
-    "TOO_SHORT": 3
-  },
-  "diagnostic_counts": {
-    "high_entailment_incorrect_ge_0.8": 464,
-    "low_entailment_correct_le_0.2": 276
-  }
 }

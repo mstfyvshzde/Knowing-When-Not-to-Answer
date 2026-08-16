@@ -19,7 +19,7 @@ pip install -r requirements-lock.txt
 
 The project uses SQuAD v2. The original validation data is divided into separate calibration and held-out test partitions using a deterministic 50/50 stratified split with seed **17**.
 
-Calibration data is used for temperature scaling only. The learned temperature is frozen before held-out test evaluation. Test labels are not used to fit calibration parameters, tune score-combination weights, or revise verifier rules.
+Calibration data is used for temperature scaling, calibration diagnostics, and auxiliary fusion-weight tuning. The learned temperature and selected fusion parameters are frozen before held-out test evaluation. Test labels are not used to fit calibration parameters, select score-combination weights, or revise verifier rules.
 
 Dataset preparation is automated with:
 
@@ -73,13 +73,7 @@ Large intermediate predictions and reproducible nested `subset.jsonl` files are 
 
 ## Quality Checks
 
-The final local reproducibility run completed successfully with:
-
-- Ruff: **all checks passed**
-- Pytest: **115 passed**
-- repository-wide `src` coverage: **16%**
-
-Coverage is reported transparently for the full `src` tree rather than for metrics-only modules.
+Before a release or paper freeze, repository quality is validated with `make check`, which runs linting, tests, and shell-script syntax checks. Exact test-pass and coverage counts should be recorded from the final validation run rather than hard-coded while the repository is still being modified.
 
 ## Scope
 

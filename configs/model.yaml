@@ -1,104 +1,187 @@
-verification:
-  enabled: true                         # Genel doğrulama sistemini aktif eder
+qa_backbone:
+  name: "deepset/roberta-base-squad2"
+  # Projenin tüm ana QA deneylerinde kullanılan pretrained
+  # extractive question-answering backbone.
 
-  strategy: "combined"                  # Güven skoru ve kanıt doğrulamasını birlikte kullanır
-  available_strategies:
-    - "confidence_only"                 # Sadece güven skoruna göre karar verir
-    - "evidence_only"                   # Sadece kanıt desteğine göre karar verir
-    - "combined"                        # Güven ve kanıt sonuçlarını birlikte değerlendirir
+  task: "extractive_question_answering"
+  # Model verilen context içinden bir answer span seçer;
+  # free-form text generation yapmaz.
 
-confidence_verification:
-  enabled: true                         # Güven skoru tabanlı doğrulamayı aktif eder
-  use_calibrated_confidence: true       # Ham skor yerine kalibre edilmiş güven skorunu kullanır
+  tokenizer: "deepset/roberta-base-squad2"
+  # QA modelinin kendi tokenizer'ı kullanılır.
 
-  thresholds:
-    high_confidence: 0.80               # Bu değerin üzeri yüksek güven kabul edilir
-    low_confidence: 0.40                # Bu değerin altı düşük güven kabul edilir
+  revision: null
+  # Belirli bir Hugging Face model revision'ı şu anda pinlenmemiştir.
+  # null, repository'nin varsayılan revision'ının kullanıldığını belirtir.
 
-  high_confidence_threshold_is_provisional: true # Yüksek güven eşiğinin geçici olduğunu belirtir
-  low_confidence_threshold_is_provisional: true  # Düşük güven eşiğinin geçici olduğunu belirtir
+  fine_tuned_in_project: false
+  # QA backbone bu proje kapsamında train veya fine-tune edilmez.
+  # Pretrained checkpoint doğrudan inference için kullanılır.
 
-evidence_verification:
-  enabled: true                         # Cevabın kanıt tarafından desteklenmesini kontrol eder
-  method: "natural_language_inference"  # Cevap ve bağlam ilişkisini NLI ile değerlendirir
+  shared_across_baselines: true
+  # Forced-answer ve native no-answer baseline aynı QA backbone'u kullanır.
+  # Böylece karşılaştırma model değişikliğinden değil,
+  # abstention/ranking davranışından kaynaklanır.
 
-  labels:
-    supported: "SUPPORTED"              # Kanıt cevabı destekliyorsa kullanılacak etiket
-    unsupported: "UNSUPPORTED"          # Kanıt cevapla çelişiyorsa kullanılacak etiket
-    uncertain: "UNCERTAIN"              # Destek durumu net değilse kullanılacak etiket
 
-  thresholds:
-    supported_probability: 0.75         # Destek olasılığı bu değeri geçerse desteklenmiş sayılır
-    unsupported_probability: 0.65       # Çelişme olasılığı bu değeri geçerse desteklenmiyor sayılır
+dataset_interface:
+  processed_dataset_path: "data/processed/squad_v2"
+  # Model inference için hazırlanan SQuAD v2 DatasetDict.
 
-  verifier_model:
-    name: null                          # Kullanılacak doğrulama modelinin adı
-    revision: null                      # Doğrulama modelinin belirli sürümü
-    trust_remote_code: false            # Model deposundaki özel kodların çalışmasını engeller
+  question_field: "question"
+  # Modelin question input alanı.
 
-answerability_verification:
-  enabled: true                         # Sorunun bağlamdan cevaplanabilirliğini kontrol eder
+  context_field: "context"
+  # Modelin answer span aradığı context alanı.
 
-  thresholds:
-    answerable_probability: 0.70        # Bu değerin üzeri cevaplanabilir kabul edilir
-    unanswerable_probability: 0.70      # Bu değerin üzeri cevaplanamaz kabul edilir
+  reference_answers_field: "answers"
+  # Gold/reference cevapların dataset içindeki alanı.
 
-consistency_verification:
-  enabled: false                        # Çoklu çalıştırma ile tutarlılık kontrolünü kapatır
+  answerability_field: "is_answerable"
+  # prepare_data.py tarafından eklenen binary answerability alanı.
 
-  number_of_runs: 5                     # Tutarlılık için yapılacak tekrar sayısı
-  agreement_threshold: 0.80             # Sonuçların tutarlı sayılması için gereken uyum oranı
-  sampling_temperature: 0.0             # Rastgelelik seviyesi; 0 deterministik sonuç üretir
 
-decision_policy:
-  actions:
-    - "ANSWER"                          # Cevabı doğrudan kullanıcıya sun
-    - "VERIFY"                          # Cevabı ek doğrulamaya gönder
-    - "ABSTAIN"                         # Güvenli cevap verilemediğinde cevaplamaktan kaçın
+forced_answer_baseline:
+  enabled: true
+  # Final selective-ranking deneylerinin ortak QA candidate üretim aşaması.
 
-  rules:
-    answer:
-      require_supported_evidence: true  # Cevap vermek için kanıt desteği zorunludur
-      minimum_confidence: 0.80          # Cevap için gereken minimum güven skoru
-      require_answerable_prediction: true # Sorunun cevaplanabilir tahmin edilmesi gerekir
+  handle_impossible_answer: false
+  # Modelin native no-answer seçeneği kapatılır.
+  # Her örnek için bir non-empty answer span üretilmeye çalışılır.
 
-    verify:
-      allow_uncertain_evidence: true    # Kanıt belirsizse doğrulama aşamasına izin verir
-      minimum_confidence: 0.40          # Doğrulamaya gönderilecek minimum güven skoru
-      maximum_confidence: 0.80          # Doğrulama aralığındaki maksimum güven skoru
+  top_k: 5
+  # Pipeline ilk beş candidate span'i döndürür.
+  # En yüksek sıralı geçerli ve non-empty span seçilir.
 
-    abstain:
-      on_unsupported_evidence: true     # Kanıt desteklemiyorsa cevap vermekten kaçınır
-      on_unanswerable_prediction: true  # Soru cevaplanamazsa cevap vermekten kaçınır
-      below_confidence: 0.40            # Güven bu değerin altındaysa cevap üretmez
+  require_non_empty_span: true
+  # Forced-answer candidate boş olamaz.
 
-  conflict_resolution:
-    priority:
-      - "UNSUPPORTED_EVIDENCE"          # En yüksek öncelik: kanıt cevabı desteklemiyor
-      - "UNANSWERABLE"                  # İkinci öncelik: soru cevaplanamaz
-      - "LOW_CONFIDENCE"                # Üçüncü öncelik: güven skoru düşük
-      - "UNCERTAIN_EVIDENCE"            # Dördüncü öncelik: kanıt belirsiz
-      - "SUPPORTED_EVIDENCE"            # Son öncelik: kanıt cevabı destekliyor
+  require_valid_character_span: true
+  # Candidate'ın end character index'i start index'ten büyük olmalıdır.
 
-threshold_selection:
-  dataset_split: "calibration"          # Eşiklerin calibration veri bölümünde seçileceğini belirtir
-  objective: "minimize_selective_risk_at_target_coverage"
-                                        # Belirli kapsama oranında hata riskini azaltmayı amaçlar
+  raw_score_field: "pipeline_score"
+  # Hugging Face QA pipeline tarafından verilen ham span score.
+  # Bu değer final calibrated confidence değildir.
 
-  target_coverage:
-    - 0.50                              # Soruların %50'sine cevap verme hedefi
-    - 0.70                              # Soruların %70'ine cevap verme hedefi
-    - 0.90                              # Soruların %90'ına cevap verme hedefi
+  final_decision: "forced_answer_candidate"
+  # Bu aşamada abstention yapılmaz.
+  # Üretilen answer candidate daha sonra confidence ve verifier
+  # sinyalleriyle selective ranking için değerlendirilir.
 
-  tune_on_test_set: false               # Eşiklerin test verisi üzerinde ayarlanmasını engeller
 
-outputs:
-  save_component_scores: true           # Her doğrulama bileşeninin skorunu kaydeder
-  save_verification_labels: true        # SUPPORTED gibi doğrulama etiketlerini kaydeder
-  save_final_decisions: true            # ANSWER, VERIFY veya ABSTAIN kararını kaydeder
-  save_decision_reasons: true           # Kararın hangi sebeple verildiğini kaydeder
+native_no_answer_baseline:
+  enabled: true
+  # Aynı QA backbone'un kendi no-answer davranışını ölçen comparison baseline.
 
-audit:
-  record_rule_triggered: true            # Hangi karar kuralının çalıştığını kaydeder
-  record_thresholds: true                # Kullanılan eşik değerlerini kaydeder
-  record_verifier_version: true          # Doğrulayıcı modelin sürümünü kaydeder
+  handle_impossible_answer: true
+  # Model native SQuAD v2 null/no-answer seçeneğini kullanabilir.
+
+  top_k: 1
+  # Modelin en yüksek skorlu final seçimi kullanılır.
+
+  empty_prediction_action: "ABSTAIN"
+  # Model boş answer döndürürse project-level action ABSTAIN olur.
+
+  non_empty_prediction_action: "ANSWER"
+  # Model non-empty span döndürürse action ANSWER olur.
+
+  shared_backbone_with_forced_answer: true
+  # Forced-answer karşılaştırmasıyla aynı model checkpoint'i kullanılır.
+
+
+confidence_estimation:
+  enabled: true
+  # Forced-answer candidate'lar için model-internal confidence sinyali çıkarılır.
+
+  model_name: "deepset/roberta-base-squad2"
+  # Confidence, cevabı üreten aynı QA backbone'dan hesaplanır.
+
+  method: "answer_vs_null_logit_margin"
+  # Forced-answer span score ile modelin null/no-answer score'u karşılaştırılır.
+
+  answer_score:
+    definition: "start_logit(answer_start) + end_logit(answer_end)"
+    # Candidate answer span için kullanılan raw logit score.
+
+  null_score:
+    definition: "start_logit(CLS) + end_logit(CLS)"
+    # CLS token position modelin null/no-answer position'ı olarak kullanılır.
+
+  margin:
+    definition: "answer_score - null_score"
+    # Pozitif margin answer span'i;
+    # negatif margin null/no-answer seçeneğini daha fazla destekler.
+
+  uncalibrated_transform: "sigmoid"
+  # Raw margin sigmoid ile [0, 1] aralığına dönüştürülür.
+  # Bu değer temperature scaling uygulanmadan önce
+  # calibrated probability olarak yorumlanmaz.
+
+  output_field: "uncalibrated_confidence"
+  # Temperature scaling öncesindeki confidence signal.
+
+
+tokenization:
+  maximum_length: 384
+  # Confidence estimation sırasında question + context +
+  # special tokens için kullanılan maximum token length.
+
+  document_stride: 128
+  # Uzun context'ler overlapping chunk'lara ayrılırken
+  # komşu chunk'lar arasında tekrar kullanılan token miktarı.
+
+  truncation: "only_second"
+  # Uzun input durumunda context tarafı chunk'lanır;
+  # question korunur.
+
+  return_offsets_mapping: true
+  # Character-level forced-answer span'in token position'larına
+  # eşlenebilmesi için offset mapping gerekir.
+
+
+calibration:
+  enabled: true
+  # Uncalibrated answer-vs-null confidence daha sonra
+  # probability calibration işleminden geçirilir.
+
+  method: "temperature_scaling"
+  # Tek temperature parametresi calibration split üzerinde fit edilir.
+
+  fit_split: "calibration"
+  # Temperature yalnızca calibration labels kullanılarak seçilir.
+
+  apply_split: "test"
+  # Fitted temperature frozen halde held-out test confidence'ına uygulanır.
+
+  fit_on_test_set: false
+  # Held-out test correctness temperature parameter seçimini etkilemez.
+
+  calibrated_output_field: "calibrated_confidence"
+  # Final selective-ranking deneyinde kullanılan confidence alanı.
+
+
+inference:
+  default_device: "cpu"
+  # Canonical experiment script'in varsayılan çalışma cihazı CPU'dur.
+
+  supported_devices:
+    - "cpu"
+    - "cuda"
+    - "mps"
+  # İlgili hardware backend mevcutsa CLI üzerinden seçilebilir.
+
+  device_controlled_by_runtime: true
+  # Gerçek experiment scriptleri device değerini CLI/environment
+  # üzerinden seçer; model.yaml script davranışını otomatik override etmez.
+
+
+reproducibility:
+  deterministic_candidate_selection: true
+  # Aynı model output'u içindeki candidate seçim kuralı deterministiktir.
+
+  project_seed: 17
+  # Project-level deterministic ordering ve sampling protokolünün seed'i.
+
+  model_revision_pinned: false
+  # Şu anda exact Hugging Face model revision hash'i pinlenmemiştir.
+  # Bu durum reproducibility limitation olarak açıkça kaydedilir.

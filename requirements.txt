@@ -1,6 +1,25 @@
+# Runtime dependencies required to reproduce the selective-QA experiments.
+#
+# Development-only tools such as pytest, pytest-cov, and Ruff are installed
+# separately by the CI workflow and are intentionally not runtime dependencies.
+
 PyYAML>=6.0,<7.0
+# YAML configuration-file parsing.
+
 numpy>=1.26,<3.0
+# Numerical operations used by calibration, bootstrap analysis,
+# ranking evaluation, and reproducibility utilities.
+
 datasets>=2.20,<5.0
-torch>=2.2
+# Hugging Face Datasets for downloading, preparing, saving,
+# and loading the SQuAD v2 dataset.
+
+torch>=2.2,<3.0
+# PyTorch backend used for QA, QA2D, and NLI model inference.
+
 transformers>=4.45,<5.0
+# Hugging Face Transformers for extractive QA,
+# tokenization, QA-to-declarative generation, and MNLI verification.
+
 matplotlib>=3.8,<4.0
+# Generation of calibration, ablation, and risk-coverage figures.

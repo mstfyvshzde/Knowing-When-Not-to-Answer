@@ -1,9 +1,20 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Pytest yalnızca repository'nin canonical test suite'ini tests/ altında keşfeder.
+
 addopts = "--cov=src --cov-report=term-missing"
+# Test çalıştırıldığında src/ için coverage hesaplanır.
+# Eksik coverage satırları terminal çıktısında gösterilir.
+
+
 [tool.ruff]
-exclude = [
+target-version = "py312"
+# GitHub Actions ve canonical development environment Python 3.12 kullanır.
+
+extend-exclude = [
     "notebooks",
     ".venv",
     "htmlcov",
 ]
+# Ruff'ın kendi varsayılan exclude listesini korurken
+# proje-spesifik generated/local klasörleri de tarama dışında bırakır.

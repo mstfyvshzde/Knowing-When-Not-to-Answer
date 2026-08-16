@@ -3,109 +3,118 @@ project:
   # Projenin adı.
 
   task: "selective_question_answering"
-  # Modelin her soruya cevap vermek yerine,
-  # cevaplama, doğrulama veya çekimser kalma kararı verdiği görev.
+  # Selective QA görevini tanımlar.
+  # Sistem, QA adaylarını güven ve doğrulama sinyalleriyle sıralar
+  # ve gerektiğinde cevap vermemeyi (abstention) destekler.
 
   experiment_name: "default_experiment"
-  # Çalıştırılan deneyin adı.
+  # Çalıştırılan deney için genel isim.
 
 
 reproducibility:
   seed: 17
-  # Rastgele işlemlerin aynı sonuçları üretmesi için kullanılan sabit sayı.
+  # Veri bölme, örnek sıralama ve diğer rastgele işlemlerde
+  # kullanılan canonical reproducibility seed'i.
 
   deterministic: true
-  # Deney tekrar çalıştırıldığında mümkün olduğunca aynı sonuçları üretir.
+  # Mümkün olan bileşenlerde deterministik çalışmayı hedefler.
+  # Donanım veya bazı ML operasyonları tam bit-level determinism
+  # garanti etmeyebilir.
 
 
 paths:
   raw_data_dir: "data/raw"
-  # Ham veri dosyalarının bulunduğu klasör.
+  # İndirilen ham veri kümesinin bulunduğu klasör.
 
   processed_data_dir: "data/processed"
-  # İşlenmiş ve modele hazır verilerin bulunduğu klasör.
+  # Hazırlanmış calibration ve held-out split'lerin bulunduğu klasör.
 
   output_dir: "outputs"
-  # Genel çıktıların kaydedileceği ana klasör.
+  # Deney tahminleri, tablolar ve diğer sayısal çıktıların ana klasörü.
 
   predictions_dir: "outputs/predictions"
-  # Model tahminlerinin kaydedileceği klasör.
+  # Model ve verifier tahminlerinin kaydedildiği klasör.
 
-  figures_dir: "outputs/figures"
-  # Grafik ve görsellerin kaydedileceği klasör.
+  figures_dir: "assets/figures"
+  # Final dokümantasyon ve paper için kullanılan canonical figure klasörü.
 
   tables_dir: "outputs/tables"
-  # Sonuç tablolarının kaydedileceği klasör.
+  # Sonuç tablolarının kaydedildiği klasör.
 
   logs_dir: "outputs/logs"
-  # Program çalışma kayıtlarının kaydedileceği klasör.
+  # Çalışma loglarının kaydedildiği klasör.
 
 
 runtime:
   device: "auto"
-  # CPU veya GPU seçimini otomatik yapar.
+  # Uygun olduğunda CPU, CUDA veya MPS cihazının seçilmesini sağlar.
 
   batch_size: 16
-  # Modelin aynı anda işleyeceği örnek sayısı.
+  # Config-aware bileşenler için genel batch-size varsayılanı.
+  # Bazı scriptler kendi CLI/default değerlerini kullanabilir.
 
   num_workers: 0
-  # Veri yükleme sırasında kullanılacak ek işlem sayısı.
-  # 0 olması işlemin ana program üzerinden yapılacağı anlamına gelir.
+  # Veri yükleme için ek worker sayısı.
+  # 0, yüklemenin ana process üzerinden yapılması anlamına gelir.
 
 
 decision_space:
   answer_label: "ANSWER"
-  # Model soruyu güvenle cevaplayabiliyorsa verilen karar.
+  # Sistemin cevabı kullanıcıya sunmayı seçtiği routing action.
 
   verify_label: "VERIFY"
-  # Cevap vermeden önce bilginin doğrulanması gerekiyorsa verilen karar.
+  # Tarihsel threshold/routing pipeline'ında ek doğrulama gerektiren ara action.
+  # Final held-out ranking deneylerinde bağımsız bir son cevap sınıfı değildir.
 
   abstain_label: "ABSTAIN"
-  # Model yeterince emin değilse cevap vermemeyi seçer.
+  # Sistemin cevap vermemeyi seçtiği routing action.
 
 
 logging:
   level: "INFO"
-  # Normal çalışma bilgileri ve önemli mesajlar kaydedilir.
+  # Varsayılan log seviyesi.
 
   save_predictions: true
-  # Modelin verdiği tahminleri dosyaya kaydeder.
+  # Destekleyen çalıştırıcılarda prediction artifact'lerini kaydetmeyi ister.
 
   save_metrics: true
-  # Başarı ölçümlerini kaydeder.
+  # Destekleyen çalıştırıcılarda hesaplanan metrikleri kaydetmeyi ister.
 
   save_config: true
-  # Kullanılan bu yapılandırma dosyasını sonuçlarla birlikte kaydeder.
+  # Destekleyen çalıştırıcılarda kullanılan config bilgisini kaydetmeyi ister.
 
 
 evaluation:
-  primary_metric: "selective_risk"
-  # Ana değerlendirme ölçütüdür.
-  # Modelin cevap vermeyi seçtiği sorulardaki hata oranını ölçer.
+  primary_metric: "aurc"
+  # Final selective-QA ranking karşılaştırmasının ana metriği:
+  # Area Under the Risk-Coverage Curve (AURC).
+  # Daha düşük AURC daha iyi ranking performansı anlamına gelir.
 
   report_accuracy: true
-  # Doğru cevap oranını raporlar.
+  # Tüm adaylar üzerindeki correctness oranını raporlamayı etkinleştirir.
 
   report_coverage: true
-  # Modelin soruların ne kadarına cevap verdiğini raporlar.
+  # Seçili operating point'lerde cevaplanan örnek oranını raporlar.
 
   report_abstention_rate: true
-  # Modelin cevap vermekten kaçındığı soru oranını raporlar.
+  # Cevap verilmeyen örneklerin oranını raporlar.
 
   report_false_confidence_rate: true
-  # Modelin yanlış olduğu hâlde kendinden emin cevap verme oranını ölçer.
+  # Yanlış fakat yüksek güvenli adayların analizini etkinleştirir.
 
   report_unsupported_answer_rate: true
-  # Yeterli kanıt veya dayanak olmadan verilen cevapların oranını ölçer.
+  # Verifier tarafından zayıf veya desteksiz görülen cevapların
+  # analizini etkinleştirir.
 
   report_calibration: true
-  # Modelin güven puanlarının gerçek doğruluk oranlarıyla uyumunu ölçer.
+  # Confidence probability calibration metriklerini raporlamayı etkinleştirir.
 
 
 experiment:
   use_test_set_for_tuning: false
-  # Test verisi model ayarlamak için kullanılmaz.
-  # Test seti yalnızca son değerlendirme için korunur.
+  # Held-out test etiketleri calibration, threshold veya fusion
+  # parametre seçimi için kullanılmaz.
 
   overwrite_outputs: false
-  # Önceden oluşturulmuş sonuç dosyalarının üzerine yazılmaz.
+  # Varsayılan olarak mevcut experiment artifact'lerinin üzerine yazılmaz.
+  # Temiz yeniden üretim gerektiğinde eski artifact'ler açıkça kaldırılmalıdır.

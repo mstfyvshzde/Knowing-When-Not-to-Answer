@@ -1,0 +1,12 @@
+{
+    "method": "temperature_scaling",
+    "temperature": 4.60453865752246,
+    "fit_examples": 3000,
+    "correct_examples": 1243,
+    "incorrect_examples": 1757,
+    "nll_before": 0.9669131636619568,
+    "nll_after": 0.4124690890312195,
+    "fit_split": "calibration",
+    "input_signal": "answer_null_margin",
+    "test_set_used_for_fitting": false
+}

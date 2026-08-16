@@ -40,7 +40,7 @@ The compared methods differ only in the ranking score assigned to each predictio
 
 The original SQuAD v2 validation split is divided into separate calibration and held-out test partitions using a deterministic 50/50 stratified split with seed `17`.
 
-The calibration partition is used to fit temperature scaling.
+The calibration partition is used for temperature scaling, calibration diagnostics, and auxiliary fusion-weight tuning.
 
 The held-out test partition is reserved for final evaluation.
 
@@ -48,7 +48,16 @@ The held-out test partition is reserved for final evaluation.
 
 Temperature scaling is fitted on calibration data only.
 
-The fitted temperature is frozen before application to the held-out test predictions.
+A separate auxiliary weighted-geometric fusion search is also performed on calibration data only:
+
+```text
+score = confidence^alpha * verifier_score^(1 - alpha)
+alpha = 0.00, 0.01, ..., 1.00
+```
+
+Calibration AURC is the selection objective. For both verifier combinations, the selected endpoint is `alpha = 1.00`, corresponding to confidence only.
+
+The fitted temperature and calibration-selected fusion parameters are frozen before held-out evaluation. The primary reported fusion comparisons retain the predefined equal-weight geometric mean.
 
 Held-out test labels are not used for:
 
@@ -57,6 +66,22 @@ Held-out test labels are not used for:
 - verifier-rule revision
 - prompt revision
 - ranking-rule tuning
+
+## Canonical Forced-Answer Correctness
+
+The five primary methods rank the same forced-answer QA candidates.
+
+Correctness is implemented by:
+
+```text
+src.calibration.calibration_metrics.is_prediction_correct
+```
+
+For answerable examples, normalized prediction text must exactly match at least one normalized reference answer. For unanswerable examples in this forced-answer experiment, the candidate is incorrect.
+
+The final N=3,000 candidate set contains 1,267 correct and 1,733 incorrect predictions, for full-coverage accuracy `0.422333`.
+
+A separate native no-answer baseline uses different routing semantics and is not used to redefine primary candidate correctness.
 
 ## Verification Signals
 

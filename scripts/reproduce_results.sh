@@ -59,7 +59,7 @@ echo
 
 # Stage 1 prepares the deterministic project dataset artifacts required by all
 # later prediction and evaluation steps.
-echo "[1/3] Preparing dataset..."
+echo "[1/4] Preparing dataset..."
 bash scripts/download_dataset.sh
 
 
@@ -68,19 +68,27 @@ bash scripts/download_dataset.sh
 # fitting, frozen test calibration, verifier inference, held-out ranking
 # evaluation, bootstrap uncertainty, and final diagnostic analyses.
 echo
-echo "[2/3] Running final experiments..."
+echo "[2/4] Running final experiments..."
 DEVICE="$DEVICE" \
 LIMIT="$LIMIT" \
 bash scripts/run_all_experiments.sh
+
+
+# Publication-facing figures are regenerated from the canonical retained
+# artifacts after the scientific pipeline completes.
+echo
+echo "[3/4] Regenerating canonical figures..."
+python scripts/generate_figures.py
 
 
 # Reproducibility includes software integrity as well as numerical outputs.
 # Ruff checks repository code quality, while pytest verifies the implemented
 # invariants and evaluation behavior.
 echo
-echo "[3/3] Running quality checks..."
+echo "[4/4] Running quality checks..."
 python -m ruff check .
 python -m pytest -q
+bash -n scripts/*.sh
 
 
 # Reaching this point means every required stage exited successfully because

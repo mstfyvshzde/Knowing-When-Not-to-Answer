@@ -1,36 +1,351 @@
-# This configuration file stores the verification model settings, thresholds, evidence window size, and standard labels in one central place so the verification system can use consistent parameters.
+verification:
+  enabled: true
+  # Final selective-QA deneylerinde verification sinyallerinin
+  # üretildiğini belirtir.
+
+  purpose: "selective_qa_ranking_signals"
+  # Verifier'lar doğrudan factual-correctness oracle değildir.
+  # Amaçları QA candidate'ları sıralamak için ek support sinyalleri üretmektir.
+
+  use_gold_answers_during_inference: false
+  # Verifier inference sırasında gold/reference answer kullanılmaz.
+
+  use_correctness_labels_during_inference: false
+  # Candidate'ın doğru/yanlış etiketi verifier'a verilmez.
+
+  nli_probabilities_are_qa_correctness_probabilities: false
+  # Entailment/neutral/contradiction probability'leri,
+  # NLI classifier'ın kendi class probability'leridir.
+  # QA cevabının doğru olma ihtimali olarak yorumlanmamalıdır.
 
 
-# Settings for the independent QA verifier
-evidence_checker:
-  # Which verifier model we use
-  model_name: "deepset/deberta-v3-base-squad2"
-  # Minimum confidence required to consider an answer supported
-  support_threshold: 0.30
-  # How similar the generated answer must be to the verifier’s answer
-  match_threshold: 0.80
-  # Confidence required to strongly classify an answer as UNSUPPORTED
-  contradiction_threshold: 0.50
+shared_nli_backbone:
+  model_name: "FacebookAI/roberta-large-mnli"
+  # Final iki NLI-based verifier tarafından kullanılan ortak MNLI backbone.
+
+  revision: null
+  # Exact Hugging Face model revision şu anda pinlenmemiştir.
+
+  fine_tuned_in_project: false
+  # Model bu proje içinde train veya fine-tune edilmez.
+
+  shared_between_final_verifiers: true
+  # Question-aware V2 ve answer-support/self verifier
+  # aynı RoBERTa-large-MNLI backbone'unu kullanır.
+
+  statistically_independent_verifiers: false
+  # İki semantic verifier farklı claim construction kullanmasına rağmen
+  # model backbone'u aynı olduğu için independent model evidence olarak
+  # sunulmamalıdır.
+
+  nli_labels:
+    - "ENTAILMENT"
+    - "NEUTRAL"
+    - "CONTRADICTION"
+  # Pretrained MNLI modelinin semantic class'ları.
+
+  maximum_total_tokens: 512
+  # Final premise+hypothesis encoding için toplam maximum token length.
+
+  device_selection: "cuda_then_mps_then_cpu"
+  # Verifier kodu önce CUDA, sonra MPS, aksi halde CPU kullanır.
 
 
-# Settings for the context/evidence-based verifier
-evidence_verifier:
+question_aware_semantic_v2:
+  enabled: true
+  # Final ana verifier sinyallerinden biri.
 
-  # Number of characters of evidence taken from around the answer
-  evidence_window_size: 120
-  # If the score is above this threshold -> SUPPORTED
-  supported_threshold: 0.75
-  # If the score is above this threshold but below supported_threshold -> WEAK
-  weak_threshold: 0.40
+  implementation: "src/verification/question_answer_nli_verifier_v2.py"
+  # Canonical implementation dosyası.
+
+  method: "qa_to_declarative_claim_then_nli"
+  # Question + predicted answer önce declarative claim'e çevrilir;
+  # valid claim context'e karşı NLI ile değerlendirilir.
+
+  qa2d_model:
+    name: "domenicrosati/QA2D-t5-base"
+    # Question-answer pair'i declarative statement'a dönüştüren pretrained model.
+
+    revision: null
+    # Exact model revision şu anda pinlenmemiştir.
+
+    fine_tuned_in_project: false
+    # QA2D modeli proje içinde fine-tune edilmez.
+
+    maximum_input_tokens: 256
+    # QA2D input için maximum token sayısı.
+
+    maximum_new_tokens: 80
+    # Generated declarative claim için maximum yeni token.
+
+    generation:
+      num_beams: 4
+      do_sample: false
+      early_stopping: true
+    # Claim generation deterministic beam search kullanır.
+
+  nli:
+    model_name: "FacebookAI/roberta-large-mnli"
+    # Generated valid claim'i source context'e karşı değerlendiren NLI model.
+
+    premise: "context"
+    # Source context NLI premise olarak kullanılır.
+
+    hypothesis: "generated_qa_claim"
+    # QA2D tarafından oluşturulan claim hypothesis olur.
+
+    maximum_context_tokens: 384
+    # NLI öncesi context için ayrılan maximum token.
+
+    maximum_claim_tokens: 96
+    # NLI öncesi generated claim için ayrılan maximum token.
+
+    maximum_total_tokens: 512
+    # Final encoded premise+hypothesis pair sınırı.
+
+    entailment_threshold: 0.50
+    # Entailment probability bu değere ulaşırsa
+    # ve daha önce contradiction threshold tetiklenmediyse
+    # categorical label ENTAILMENT olabilir.
+
+    contradiction_threshold: 0.50
+    # Contradiction threshold categorical label assignment'ta
+    # entailment'tan önce kontrol edilir.
+
+    threshold_priority:
+      - "CONTRADICTION"
+      - "ENTAILMENT"
+      - "ARGMAX_FALLBACK"
+    # İki threshold da tetiklenmezse en yüksek NLI class probability kullanılır.
+
+  claim_validation:
+    enabled: true
+    # QA2D output'u NLI'ya gönderilmeden önce
+    # dataset-independent structural checks uygulanır.
+
+    minimum_answer_token_coverage: 0.80
+    # Predicted answer bilgisinin generated claim'de
+    # yeterince korunmasını ister.
+
+    minimum_claim_token_count: 4
+    # Çok kısa generated fragments invalid kabul edilir.
+
+    maximum_question_copy_ratio: 0.98
+    # Question formunu koruyarak neredeyse aynen kopyalanan
+    # output'ları tespit etmeye yardım eder.
+
+    check_empty_claim: true
+    # Boş generated claim invalid olur.
+
+    check_question_form: true
+    # Hâlâ soru biçiminde kalan generated text invalid olabilir.
+
+    check_answer_only_fragment: true
+    # Yalnızca answer string'den oluşan output self-contained claim sayılmaz.
+
+    check_question_repetition: true
+    # Original question'ın değiştirilmeden tekrar edilmesi invalid olur.
+
+    check_answer_preservation: true
+    # Predicted answer bilgisinin claim'de kaybolması kontrol edilir.
+
+    check_number_preservation: true
+    # Answer içindeki numeric information korunmalıdır.
+
+    check_negation_preservation: true
+    # Explicit negation QA-to-claim dönüşümünde kaybolmamalıdır.
+
+  invalid_claim_policy:
+    label: "INVALID_CLAIM"
+    # Claim validation başarısızsa kullanılan bookkeeping label.
+
+    run_nli: false
+    # Invalid claim NLI modeline gönderilmez.
+
+    entailment_probability: 0.0
+    neutral_probability: 0.0
+    contradiction_probability: 0.0
+    # Bu değerler NLI inference sonucu değildir;
+    # NLI çalıştırılmadığını temsil eden placeholder'lardır.
+
+    ranking_score: 0.0
+    # Final selective-ranking evaluator invalid claim için
+    # question-aware verifier skorunu 0 kabul eder.
+
+  empty_answer_policy:
+    label: "EMPTY_ANSWER"
+    run_nli: false
+    # Empty answer compatibility durumunda NLI çalıştırılmaz.
+    # Canonical forced-answer baseline normalde non-empty candidate üretir.
+
+  output_fields:
+    claim: "qa_generated_claim"
+    claim_valid: "qa_claim_valid"
+    claim_validation_reasons: "qa_claim_validation_reasons"
+    label: "qa_nli_label"
+    confidence: "qa_nli_confidence"
+    entailment_probability: "qa_entailment_probability"
+    neutral_probability: "qa_neutral_probability"
+    contradiction_probability: "qa_contradiction_probability"
+    # Downstream evaluation tarafından kullanılan başlıca output alanları.
+
+  batch_size: 4
+  # Canonical experiment pipeline bu verifier'ı batch-size 4 ile çalıştırır.
 
 
-# Standard verification labels used in the system
-labels:
-  supported: "SUPPORTED"
-  weak: "WEAK"
-  unsupported: "UNSUPPORTED"
-  uncertain: "UNCERTAIN"
+answer_support_verifier:
+  enabled: true
+  # Final ikinci semantic verifier sinyali.
+
+  historical_code_name: "self_verifier"
+  # Repository compatibility nedeniyle kod ve output field'larında
+  # "self_verifier" adı korunur.
+
+  preferred_description: "answer-support NLI verifier"
+  # Paper ve dokümantasyonda daha doğru semantic açıklama.
+
+  implementation: "src/verification/self_verifier.py"
+  # Canonical implementation dosyası.
+
+  model_name: "FacebookAI/roberta-large-mnli"
+  # Question-aware V2 ile aynı NLI backbone.
+
+  revision: null
+  # Exact Hugging Face revision pinlenmemiştir.
+
+  method: "fixed_question_answer_claim_then_nli"
+  # Generative QA2D yerine deterministic fixed template kullanılır.
+
+  claim_template: 'The answer to the question "<question>" is "<answer>".'
+  # Her non-empty QA prediction için oluşturulan deterministic hypothesis.
+
+  premise: "context"
+  # Original source context premise olur.
+
+  hypothesis: "fixed_answer_support_claim"
+  # Fixed QA statement NLI hypothesis olur.
+
+  maximum_context_tokens: 384
+  # NLI öncesi maximum context token sayısı.
+
+  maximum_claim_tokens: 96
+  # Fixed claim için maximum token sayısı.
+
+  maximum_total_tokens: 512
+  # Encoded NLI pair için toplam maximum token.
+
+  thresholds:
+    supported: 0.70
+    # Entailment probability >= 0.70 ise,
+    # contradiction rejection önce tetiklenmemişse SUPPORTED.
+
+    rejected: 0.70
+    # Contradiction probability >= 0.70 ise REJECTED.
+
+  threshold_priority:
+    - "REJECTED"
+    - "SUPPORTED"
+    - "UNCERTAIN"
+  # Contradiction/rejection önce değerlendirilir.
+  # İki threshold da tetiklenmezse UNCERTAIN kullanılır.
+
+  labels:
+    supported: "SUPPORTED"
+    uncertain: "UNCERTAIN"
+    rejected: "REJECTED"
+  # Answer-support verifier'ın categorical output label'ları.
+
+  score:
+    field: "self_verification_score"
+    formula: "entailment_probability - contradiction_probability"
+    minimum: -1.0
+    maximum: 1.0
+    # Positive score support yönünü,
+    # negative score rejection yönünü gösterir.
+
+  downstream_normalization:
+    enabled: true
+    formula: "(self_verification_score + 1) / 2"
+    output_range:
+      minimum: 0.0
+      maximum: 1.0
+    # Final ranking evaluator verifier score'u [0, 1] aralığına map eder.
+    # Raw artifact'teki self_verification_score değiştirilmez.
+
+  empty_answer_policy:
+    label: "REJECTED"
+    score: -1.0
+    entailment_probability: 0.0
+    neutral_probability: 0.0
+    contradiction_probability: 1.0
+    generated_by_nli: false
+    # Empty answer NLI'ya gönderilmez.
+    # Bu değerler maximal-rejection placeholder'lardır.
+
+  output_fields:
+    claim: "self_verification_claim"
+    label: "self_verification_label"
+    score: "self_verification_score"
+    entailment_probability: "self_entailment_probability"
+    neutral_probability: "self_neutral_probability"
+    contradiction_probability: "self_contradiction_probability"
+
+  batch_size: 4
+  # Canonical experiment pipeline batch-size 4 kullanır.
 
 
+final_ranking_usage:
+  question_aware_score: "qa_entailment_probability"
+  # Question-aware V2'nin final ranking signal'ı.
+
+  answer_support_score: "normalized(self_verification_score)"
+  # Answer-support verifier'ın final ranking signal'ı.
+
+  verifier_labels_used_as_primary_ranking_score: false
+  # Final AURC comparison categorical SUPPORTED/REJECTED labels üzerinden değil,
+  # continuous verifier score'ları üzerinden yapılır.
+
+  fixed_confidence_question_aware_fusion:
+    formula: "sqrt(calibrated_confidence * qa_entailment_probability)"
+    # Ana fixed ablation'daki equal-weight geometric fusion.
+
+  fixed_confidence_answer_support_fusion:
+    formula: "sqrt(calibrated_confidence * normalized(self_verification_score))"
+    # Confidence + answer-support fixed fusion.
+
+  tune_fusion_weights_on_test_set: false
+  # Fusion parameter selection held-out test labels üzerinden yapılmaz.
 
 
+legacy_verification_components:
+  secondary_qa_evidence_checker:
+    enabled_in_final_protocol: false
+    # Repository'de bulunan eski/prototype secondary-QA verifier.
+    # Final beş-method held-out ranking karşılaştırmasının parçası değildir.
+
+    implementation: "src/verification/evidence_checker.py"
+
+    model_name: "deepset/deberta-v3-base-squad2"
+    # Main QA modelinden farklı bir pretrained extractive QA modelidir.
+
+    support_threshold: 0.30
+    match_threshold: 0.80
+    rejection_threshold: 0.50
+
+    interpretation: "heuristic_qa_agreement_signal"
+    # İki QA modelinin agreement/disagreement sinyalidir;
+    # logical entailment veya factual correctness kanıtı değildir.
+
+
+reproducibility:
+  project_seed: 17
+  # Project-level deterministic evaluation seed.
+
+  verifier_model_revisions_pinned: false
+  # NLI ve QA2D model revision hash'leri şu anda pinlenmemiştir.
+
+  gold_labels_used_for_verifier_inference: false
+  # Verification inference label-free yapılır.
+
+  held_out_test_used_for_verifier_parameter_tuning: false
+  # Final verifier/fusion parametreleri test labels üzerinden seçilmez.
